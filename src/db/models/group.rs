@@ -135,7 +135,10 @@ impl Group {
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(groups::table)
                     .values(GroupDb::to_db(self))
                     .execute(conn)
@@ -152,7 +155,7 @@ impl Group {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving group")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = GroupDb::to_db(self);
                 diesel::insert_into(groups::table)
                     .values(&value)
@@ -173,92 +176,127 @@ impl Group {
     }
 
     pub async fn find_by_organization(organizations_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            groups::table
-                .filter(groups::organizations_uuid.eq(organizations_uuid))
-                .load::<GroupDb>(conn)
-                .expect("Error loading groups")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups::table
+                    .filter(groups::organizations_uuid.eq(organizations_uuid))
+                    .load::<GroupDb>(conn)
+                    .expect("Error loading groups")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn count_by_org(organizations_uuid: &str, conn: &mut DbConn) -> i64 {
-        db_run! { conn: {
-            groups::table
-                .filter(groups::organizations_uuid.eq(organizations_uuid))
-                .count()
-                .first::<i64>(conn)
-                .ok()
-                .unwrap_or(0)
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups::table
+                    .filter(groups::organizations_uuid.eq(organizations_uuid))
+                    .count()
+                    .first::<i64>(conn)
+                    .ok()
+                    .unwrap_or(0)
+            }
+        }
     }
 
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            groups::table
-                .filter(groups::uuid.eq(uuid))
-                .first::<GroupDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups::table
+                    .filter(groups::uuid.eq(uuid))
+                    .first::<GroupDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_external_id_and_org(external_id: &str, org_uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            groups::table
-                .filter(groups::external_id.eq(external_id))
-                .filter(groups::organizations_uuid.eq(org_uuid))
-                .first::<GroupDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups::table
+                    .filter(groups::external_id.eq(external_id))
+                    .filter(groups::organizations_uuid.eq(org_uuid))
+                    .first::<GroupDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
     //Returns all organizations the user has full access to
     pub async fn gather_user_organizations_full_access(user_uuid: &str, conn: &mut DbConn) -> Vec<String> {
-        db_run! { conn: {
-            groups_users::table
-                .inner_join(users_organizations::table.on(
-                    users_organizations::uuid.eq(groups_users::users_organizations_uuid)
-                ))
-                .inner_join(groups::table.on(
-                    groups::uuid.eq(groups_users::groups_uuid)
-                ))
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(groups::access_all.eq(true))
-                .select(groups::organizations_uuid)
-                .distinct()
-                .load::<String>(conn)
-                .expect("Error loading organization group full access information for user")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups_users::table
+                    .inner_join(users_organizations::table.on(
+                        users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                    ))
+                    .inner_join(groups::table.on(
+                        groups::uuid.eq(groups_users::groups_uuid)
+                    ))
+                    .filter(users_organizations::user_uuid.eq(user_uuid))
+                    .filter(groups::access_all.eq(true))
+                    .select(groups::organizations_uuid)
+                    .distinct()
+                    .load::<String>(conn)
+                    .expect("Error loading organization group full access information for user")
+            }
+        }
     }
 
     pub async fn is_in_full_access_group(user_uuid: &str, org_uuid: &str, conn: &mut DbConn) -> bool {
-        db_run! { conn: {
-            groups::table
-                .inner_join(groups_users::table.on(
-                    groups_users::groups_uuid.eq(groups::uuid)
-                ))
-                .inner_join(users_organizations::table.on(
-                    users_organizations::uuid.eq(groups_users::users_organizations_uuid)
-                ))
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(groups::organizations_uuid.eq(org_uuid))
-                .filter(groups::access_all.eq(true))
-                .select(groups::access_all)
-                .first::<bool>(conn)
-                .unwrap_or_default()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups::table
+                    .inner_join(groups_users::table.on(
+                        groups_users::groups_uuid.eq(groups::uuid)
+                    ))
+                    .inner_join(users_organizations::table.on(
+                        users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                    ))
+                    .filter(users_organizations::user_uuid.eq(user_uuid))
+                    .filter(groups::organizations_uuid.eq(org_uuid))
+                    .filter(groups::access_all.eq(true))
+                    .select(groups::access_all)
+                    .first::<bool>(conn)
+                    .unwrap_or_default()
+            }
+        }
     }
 
     pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
         CollectionGroup::delete_all_by_group(&self.uuid, conn).await?;
         GroupUser::delete_all_by_group(&self.uuid, conn).await?;
 
-        db_run! { conn: {
-            diesel::delete(groups::table.filter(groups::uuid.eq(&self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting group")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(groups::table.filter(groups::uuid.eq(&self.uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting group")
+            }
+        }
     }
 
     pub async fn update_revision(uuid: &str, conn: &mut DbConn) {
@@ -268,14 +306,19 @@ impl Group {
     }
 
     async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
-        db_run! {conn: {
-            crate::util::retry(|| {
-                diesel::update(groups::table.filter(groups::uuid.eq(uuid)))
-                    .set(groups::revision_date.eq(date))
-                    .execute(conn)
-            }, 10)
-            .map_res("Error updating group revision")
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                crate::util::retry(|| {
+                    diesel::update(groups::table.filter(groups::uuid.eq(uuid)))
+                        .set(groups::revision_date.eq(date))
+                        .execute(conn)
+                }, 10)
+                .map_res("Error updating group revision")
+            }
+        }
     }
 }
 
@@ -287,7 +330,10 @@ impl CollectionGroup {
         }
 
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(collections_groups::table)
                     .values((
                         collections_groups::collections_uuid.eq(&self.collections_uuid),
@@ -315,7 +361,7 @@ impl CollectionGroup {
                     Err(e) => Err(e.into()),
                 }.map_res("Error adding group to collection")
             }
-            postgresql {
+            @diesel postgresql {
                 diesel::insert_into(collections_groups::table)
                     .values((
                         collections_groups::collections_uuid.eq(&self.collections_uuid),
@@ -336,41 +382,56 @@ impl CollectionGroup {
     }
 
     pub async fn find_by_group(group_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            collections_groups::table
-                .filter(collections_groups::groups_uuid.eq(group_uuid))
-                .load::<CollectionGroupDb>(conn)
-                .expect("Error loading collection groups")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                collections_groups::table
+                    .filter(collections_groups::groups_uuid.eq(group_uuid))
+                    .load::<CollectionGroupDb>(conn)
+                    .expect("Error loading collection groups")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            collections_groups::table
-                .inner_join(groups_users::table.on(
-                    groups_users::groups_uuid.eq(collections_groups::groups_uuid)
-                ))
-                .inner_join(users_organizations::table.on(
-                    users_organizations::uuid.eq(groups_users::users_organizations_uuid)
-                ))
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .select(collections_groups::all_columns)
-                .load::<CollectionGroupDb>(conn)
-                .expect("Error loading user collection groups")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                collections_groups::table
+                    .inner_join(groups_users::table.on(
+                        groups_users::groups_uuid.eq(collections_groups::groups_uuid)
+                    ))
+                    .inner_join(users_organizations::table.on(
+                        users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                    ))
+                    .filter(users_organizations::user_uuid.eq(user_uuid))
+                    .select(collections_groups::all_columns)
+                    .load::<CollectionGroupDb>(conn)
+                    .expect("Error loading user collection groups")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_collection(collection_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            collections_groups::table
-                .filter(collections_groups::collections_uuid.eq(collection_uuid))
-                .select(collections_groups::all_columns)
-                .load::<CollectionGroupDb>(conn)
-                .expect("Error loading collection groups")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                collections_groups::table
+                    .filter(collections_groups::collections_uuid.eq(collection_uuid))
+                    .select(collections_groups::all_columns)
+                    .load::<CollectionGroupDb>(conn)
+                    .expect("Error loading collection groups")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
@@ -379,13 +440,18 @@ impl CollectionGroup {
             group_user.update_user_revision(conn).await;
         }
 
-        db_run! { conn: {
-            diesel::delete(collections_groups::table)
-                .filter(collections_groups::collections_uuid.eq(&self.collections_uuid))
-                .filter(collections_groups::groups_uuid.eq(&self.groups_uuid))
-                .execute(conn)
-                .map_res("Error deleting collection group")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(collections_groups::table)
+                    .filter(collections_groups::collections_uuid.eq(&self.collections_uuid))
+                    .filter(collections_groups::groups_uuid.eq(&self.groups_uuid))
+                    .execute(conn)
+                    .map_res("Error deleting collection group")
+            }
+        }
     }
 
     pub async fn delete_all_by_group(group_uuid: &str, conn: &mut DbConn) -> EmptyResult {
@@ -394,12 +460,17 @@ impl CollectionGroup {
             group_user.update_user_revision(conn).await;
         }
 
-        db_run! { conn: {
-            diesel::delete(collections_groups::table)
-                .filter(collections_groups::groups_uuid.eq(group_uuid))
-                .execute(conn)
-                .map_res("Error deleting collection group")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(collections_groups::table)
+                    .filter(collections_groups::groups_uuid.eq(group_uuid))
+                    .execute(conn)
+                    .map_res("Error deleting collection group")
+            }
+        }
     }
 
     pub async fn delete_all_by_collection(collection_uuid: &str, conn: &mut DbConn) -> EmptyResult {
@@ -411,12 +482,17 @@ impl CollectionGroup {
             }
         }
 
-        db_run! { conn: {
-            diesel::delete(collections_groups::table)
-                .filter(collections_groups::collections_uuid.eq(collection_uuid))
-                .execute(conn)
-                .map_res("Error deleting collection group")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(collections_groups::table)
+                    .filter(collections_groups::collections_uuid.eq(collection_uuid))
+                    .execute(conn)
+                    .map_res("Error deleting collection group")
+            }
+        }
     }
 }
 
@@ -425,7 +501,10 @@ impl GroupUser {
         self.update_user_revision(conn).await;
 
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(groups_users::table)
                     .values((
                         groups_users::users_organizations_uuid.eq(&self.users_organizations_uuid),
@@ -449,7 +528,7 @@ impl GroupUser {
                     Err(e) => Err(e.into()),
                 }.map_res("Error adding user to group")
             }
-            postgresql {
+            @diesel postgresql {
                 diesel::insert_into(groups_users::table)
                     .values((
                         groups_users::users_organizations_uuid.eq(&self.users_organizations_uuid),
@@ -468,23 +547,33 @@ impl GroupUser {
     }
 
     pub async fn find_by_group(group_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            groups_users::table
-                .filter(groups_users::groups_uuid.eq(group_uuid))
-                .load::<GroupUserDb>(conn)
-                .expect("Error loading group users")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups_users::table
+                    .filter(groups_users::groups_uuid.eq(group_uuid))
+                    .load::<GroupUserDb>(conn)
+                    .expect("Error loading group users")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_user(users_organizations_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            groups_users::table
-                .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
-                .load::<GroupUserDb>(conn)
-                .expect("Error loading groups for user")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups_users::table
+                    .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
+                    .load::<GroupUserDb>(conn)
+                    .expect("Error loading groups for user")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn has_access_to_collection_by_member(
@@ -492,32 +581,42 @@ impl GroupUser {
         member_uuid: &str,
         conn: &mut DbConn,
     ) -> bool {
-        db_run! { conn: {
-            groups_users::table
-                .inner_join(collections_groups::table.on(
-                    collections_groups::groups_uuid.eq(groups_users::groups_uuid)
-                ))
-                .filter(collections_groups::collections_uuid.eq(collection_uuid))
-                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
-                .count()
-                .first::<i64>(conn)
-                .unwrap_or(0) != 0
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups_users::table
+                    .inner_join(collections_groups::table.on(
+                        collections_groups::groups_uuid.eq(groups_users::groups_uuid)
+                    ))
+                    .filter(collections_groups::collections_uuid.eq(collection_uuid))
+                    .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                    .count()
+                    .first::<i64>(conn)
+                    .unwrap_or(0) != 0
+            }
+        }
     }
 
     pub async fn has_full_access_by_member(org_uuid: &str, member_uuid: &str, conn: &mut DbConn) -> bool {
-        db_run! { conn: {
-            groups_users::table
-                .inner_join(groups::table.on(
-                    groups::uuid.eq(groups_users::groups_uuid)
-                ))
-                .filter(groups::organizations_uuid.eq(org_uuid))
-                .filter(groups::access_all.eq(true))
-                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
-                .count()
-                .first::<i64>(conn)
-                .unwrap_or(0) != 0
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                groups_users::table
+                    .inner_join(groups::table.on(
+                        groups::uuid.eq(groups_users::groups_uuid)
+                    ))
+                    .filter(groups::organizations_uuid.eq(org_uuid))
+                    .filter(groups::access_all.eq(true))
+                    .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                    .count()
+                    .first::<i64>(conn)
+                    .unwrap_or(0) != 0
+            }
+        }
     }
 
     pub async fn update_user_revision(&self, conn: &mut DbConn) {
@@ -537,13 +636,18 @@ impl GroupUser {
             None => warn!("User could not be found!"),
         };
 
-        db_run! { conn: {
-            diesel::delete(groups_users::table)
-                .filter(groups_users::groups_uuid.eq(group_uuid))
-                .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
-                .execute(conn)
-                .map_res("Error deleting group users")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(groups_users::table)
+                    .filter(groups_users::groups_uuid.eq(group_uuid))
+                    .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
+                    .execute(conn)
+                    .map_res("Error deleting group users")
+            }
+        }
     }
 
     pub async fn delete_all_by_group(group_uuid: &str, conn: &mut DbConn) -> EmptyResult {
@@ -552,12 +656,17 @@ impl GroupUser {
             group_user.update_user_revision(conn).await;
         }
 
-        db_run! { conn: {
-            diesel::delete(groups_users::table)
-                .filter(groups_users::groups_uuid.eq(group_uuid))
-                .execute(conn)
-                .map_res("Error deleting group users")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(groups_users::table)
+                    .filter(groups_users::groups_uuid.eq(group_uuid))
+                    .execute(conn)
+                    .map_res("Error deleting group users")
+            }
+        }
     }
 
     pub async fn delete_all_by_user(users_organizations_uuid: &str, conn: &mut DbConn) -> EmptyResult {
@@ -566,11 +675,16 @@ impl GroupUser {
             None => warn!("User could not be found!"),
         }
 
-        db_run! { conn: {
-            diesel::delete(groups_users::table)
-                .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
-                .execute(conn)
-                .map_res("Error deleting user groups")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(groups_users::table)
+                    .filter(groups_users::users_organizations_uuid.eq(users_organizations_uuid))
+                    .execute(conn)
+                    .map_res("Error deleting user groups")
+            }
+        }
     }
 }

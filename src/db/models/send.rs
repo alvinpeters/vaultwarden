@@ -192,7 +192,10 @@ impl Send {
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(sends::table)
                     .values(SendDb::to_db(self))
                     .execute(conn)
@@ -209,7 +212,7 @@ impl Send {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving send")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = SendDb::to_db(self);
                 diesel::insert_into(sends::table)
                     .values(&value)
@@ -229,11 +232,16 @@ impl Send {
             std::fs::remove_dir_all(std::path::Path::new(&crate::CONFIG.sends_folder()).join(&self.uuid)).ok();
         }
 
-        db_run! { conn: {
-            diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting send")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting send")
+            }
+        }
     }
 
     /// Purge all sends that are past their deletion date.
@@ -282,21 +290,31 @@ impl Send {
     }
 
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! {conn: {
-            sends::table
-                .filter(sends::uuid.eq(uuid))
-                .first::<SendDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                sends::table
+                    .filter(sends::uuid.eq(uuid))
+                    .first::<SendDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            sends::table
-                .filter(sends::user_uuid.eq(user_uuid))
-                .load::<SendDb>(conn).expect("Error loading sends").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                sends::table
+                    .filter(sends::user_uuid.eq(user_uuid))
+                    .load::<SendDb>(conn).expect("Error loading sends").from_db()
+            }
+        }
     }
 
     pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> Option<i64> {
@@ -323,19 +341,29 @@ impl Send {
     }
 
     pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            sends::table
-                .filter(sends::organization_uuid.eq(org_uuid))
-                .load::<SendDb>(conn).expect("Error loading sends").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                sends::table
+                    .filter(sends::organization_uuid.eq(org_uuid))
+                    .load::<SendDb>(conn).expect("Error loading sends").from_db()
+            }
+        }
     }
 
     pub async fn find_by_past_deletion_date(conn: &mut DbConn) -> Vec<Self> {
         let now = Utc::now().naive_utc();
-        db_run! {conn: {
-            sends::table
-                .filter(sends::deletion_date.lt(now))
-                .load::<SendDb>(conn).expect("Error loading sends").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                sends::table
+                    .filter(sends::deletion_date.lt(now))
+                    .load::<SendDb>(conn).expect("Error loading sends").from_db()
+            }
+        }
     }
 }

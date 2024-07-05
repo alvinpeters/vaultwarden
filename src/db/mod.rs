@@ -21,6 +21,16 @@ use crate::{
     CONFIG,
 };
 
+#[cfg(nondiesel)]
+pub mod nondiesel;
+
+#[cfg(nondiesel)]
+use nondiesel::NonDieselPool;
+
+#[cfg(fdb)]
+#[path = "schemas/fdb/schema.rs"]
+pub mod __fdb_schema;
+
 #[cfg(sqlite)]
 #[path = "schemas/sqlite/schema.rs"]
 pub mod __sqlite_schema;
@@ -53,13 +63,13 @@ where
 // This is used to generate the main DbConn and DbPool enums, which contain one variant for each database supported
 macro_rules! generate_connections {
     (
-        $( @nondiesel $name_nondiesel:ident: $ty_nondiesel:ty, )*
+        $( @nondiesel $name_nondiesel:ident: $ty_nondiesel:ty, )+
         $( $name:ident: $ty:ty ),+
     ) => {
         #[allow(non_camel_case_types, dead_code)]
         #[derive(Eq, PartialEq)]
         pub enum DbConnType {
-            $( $name_nondiesel, )*
+            $( $name_nondiesel, )+
             $( $name, )+
         }
 
@@ -70,7 +80,7 @@ macro_rules! generate_connections {
 
         #[allow(non_camel_case_types)]
         pub enum DbConnInner {
-            $( #[cfg($name_nondiesel)] $name_nondiesel(PooledConnection<ConnectionManager< $ty_nondiesel >>), )*
+            $( #[cfg($name_nondiesel)] $name_nondiesel( $ty_nondiesel ), )+
             $( #[cfg($name)] $name(PooledConnection<ConnectionManager< $ty >>), )+
         }
 
@@ -99,7 +109,10 @@ macro_rules! generate_connections {
 
         #[allow(non_camel_case_types)]
         #[derive(Clone)]
-        pub enum DbPoolInner { $( #[cfg($name)] $name(Pool<ConnectionManager< $ty >>), )+ }
+        pub enum DbPoolInner {
+            $( #[cfg($name_nondiesel)] $name_nondiesel(NonDieselPool< $ty_nondiesel >), )*
+            $( #[cfg($name)] $name(Pool<ConnectionManager< $ty >>), )+
+        }
 
         impl Drop for DbConn {
             fn drop(&mut self) {
@@ -136,6 +149,22 @@ macro_rules! generate_connections {
                 let conn_type = DbConnType::from_url(&url)?;
 
                 match conn_type {$(
+                    // Non-diesel database
+                    DbConnType::$name_nondiesel => {
+                        #[cfg($name_nondiesel)]
+                        {
+                            let pool = nondiesel::NonDieselPool::<$ty_nondiesel>::new()?;
+                            let max_size = pool.max_size();
+                            Ok(DbPool {
+                                pool: Some(DbPoolInner::$name_nondiesel(pool)),
+                                semaphore: Arc::new(Semaphore::new(max_size)),
+                            })
+                        }
+                        #[cfg(not($name_nondiesel))]
+                        unreachable!("Trying to use a non-diesel DB backend when its feature is disabled")
+                    },
+                )* $(
+                    // Diesel database
                     DbConnType::$name => {
                         #[cfg($name)]
                         {
@@ -170,6 +199,20 @@ macro_rules! generate_connections {
                 };
 
                 match self.pool.as_ref().expect("DbPool.pool should always be Some()") {  $(
+                    #[cfg($name_nondiesel)]
+                    DbPoolInner::$name_nondiesel(p) => {
+                        let pool = p.clone();
+                        let c = match pool.get_timeout(duration).await {
+                            Ok(c) => c,
+                            Err(e) => return Err(e.into())
+                        };
+
+                        Ok(DbConn {
+                            conn: Arc::new(Mutex::new(Some(DbConnInner::$name_nondiesel(c)))),
+                            permit: Some(permit)
+                        })
+                    },
+                )* $(
                     #[cfg($name)]
                     DbPoolInner::$name(p) => {
                         let pool = p.clone();
@@ -188,6 +231,7 @@ macro_rules! generate_connections {
 
 #[cfg(not(query_logger))]
 generate_connections! {
+    @nondiesel fdb: nondiesel::fdb::FdbConnection,
     sqlite: diesel::sqlite::SqliteConnection,
     mysql: diesel::mysql::MysqlConnection,
     postgresql: diesel::pg::PgConnection
@@ -195,6 +239,7 @@ generate_connections! {
 
 #[cfg(query_logger)]
 generate_connections! {
+    @nondiesel fdb: nondiesel::fdb::FdbConnection,
     @diesel sqlite: diesel_logger::LoggingConnection<diesel::sqlite::SqliteConnection>,
     @diesel mysql: diesel_logger::LoggingConnection<diesel::mysql::MysqlConnection>,
     @diesel postgresql: diesel_logger::LoggingConnection<diesel::pg::PgConnection>
@@ -217,6 +262,14 @@ impl DbConnType {
 
             #[cfg(not(postgresql))]
             err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
+
+        // FoundationDB
+        } else if url.ends_with(".cluster") || url.starts_with("fdb:") || url.ends_with("foundationdb:") {
+            #[cfg(fdb)]
+            return Ok(DbConnType::fdb);
+
+            #[cfg(not(fdb))]
+            err!("`DATABASE_URL` looks like a path to the FoundationDB cluster file, but 'fdb' feature is not enabled")
 
         //Sqlite
         } else {
@@ -242,6 +295,7 @@ impl DbConnType {
             Self::sqlite => "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;".to_string(),
             Self::mysql => String::new(),
             Self::postgresql => String::new(),
+            Self::fdb => String::new(), // FDB doesn't even have statements lol
         }
     }
 }
@@ -249,15 +303,15 @@ impl DbConnType {
 #[macro_export]
 macro_rules! db_run {
     // Same for all dbs
-    ( $conn:ident: $( @nondiesel $body_nondiesel:block )? $body:block ) => {
-        db_run! { $conn: $( @nondiesel fdb $body_nondiesel )? sqlite, mysql, postgresql $body }
+    ( $conn:ident: $( @nondiesel $body_nondiesel:block )? $( @diesel $body:block )? ) => {
+        db_run! { $conn: $( @nondiesel fdb $body_nondiesel )? $( @diesel sqlite, mysql, postgresql $body )? }
     };
-    ( @raw $conn:ident: $body:block ) => {
-        db_run! { @raw $conn: sqlite, mysql, postgresql $body }
+    ( @raw $conn:ident: $( @nondiesel $body_nondiesel:block )? $( @diesel $body:block )? ) => {
+        db_run! { @raw $conn: $( @nondiesel fdb $body_nondiesel )? $( @diesel sqlite, mysql, postgresql $body )? }
     };
 
     // Different code for each db
-    ( $conn:ident: $( @nondiesel $($db_nondiesel:ident),+ $body_nondiesel:block )* $( $($db:ident),+ $body:block )+ ) => {{
+    ( $conn:ident: $( @nondiesel $($db_nondiesel:ident),+ $body_nondiesel:block )* $( @diesel $($db:ident),+ $body:block )+ ) => {{
         #[allow(unused)] use diesel::prelude::*;
         #[allow(unused)] use $crate::db::FromDb;
 
@@ -268,14 +322,16 @@ macro_rules! db_run {
             $($(
                 #[cfg($db_nondiesel)]
                 $crate::db::DbConnInner::$db_nondiesel($conn) => {
-                    paste::paste! {
-                        #[allow(unused)] use $crate::db::[<__ $db_nondiesel _schema>]::{self as schema, *};
-                        #[allow(unused)] use [<__ $db_nondiesel _model>]::*;
-                    }
-
-                    tokio::task::block_in_place(move || { $body_nondiesel }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
+                    //paste::paste! {
+                    //    #[allow(unused)] use $crate::db::[<__ $db_nondiesel _schema>]::{self as schema, *};
+                    //    #[allow(unused)] use [<__ $db_nondiesel _model>]::*;
+                    //}
+                    todo!() // TODO: @nondiesel db_run!
+                    //tokio::task::block_in_place(move || { $body_nondiesel }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
                 },
-            )+)* $($(
+            )+)*
+            // Diesel
+            $($(
                 #[cfg($db)]
                 $crate::db::DbConnInner::$db($conn) => {
                     paste::paste! {
@@ -289,14 +345,24 @@ macro_rules! db_run {
         }
     }};
 
-    ( @raw $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
+    ( @raw $conn:ident: $( @nondiesel $($db_nondiesel:ident),+ $body_nondiesel:block )+ $( @diesel $($db:ident),+ $body:block )+ ) => {{
         #[allow(unused)] use diesel::prelude::*;
         #[allow(unused)] use $crate::db::FromDb;
 
         let conn = $conn.conn.clone();
         let mut conn = conn.lock_owned().await;
         match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
-                $($(
+            $($(
+                #[cfg($db_nondiesel)]
+                $crate::db::DbConnInner::$db_nondiesel($conn) => {
+                    // paste::paste! {
+                    //     #[allow(unused)] use $crate::db::[<__ $db_nonidesel _schema>]::{self as schema, *};
+                    //     // @ RAW: #[allow(unused)] use [<__ $db _model>]::*;
+                    // }
+
+                    tokio::task::block_in_place(move || { $body_nondiesel }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
+                },
+            )+)+ $($(
                 #[cfg($db)]
                 $crate::db::DbConnInner::$db($conn) => {
                     paste::paste! {
@@ -341,6 +407,7 @@ impl<T: FromDb> FromDb for Option<T> {
 macro_rules! db_object {
     ( $(
         $( #[$attr:meta] )*
+        $( #[nondiesel($db_name_nondiesel:ident($db_model_nondiesel:ident))] )*
         pub struct $name:ident {
             $( $( #[$field_attr:meta] )* $vis:vis $field:ident : $typ:ty ),+
             $(,)?
@@ -356,7 +423,7 @@ macro_rules! db_object {
         #[cfg(postgresql)]
         pub mod __postgresql_model { $( db_object! { @db postgresql |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
     };
-    ( @db_nondiesel $db:ident | $( #[$attr:meta] )* | $name:ident | $( $( #[$field_attr:meta] )* $vis:vis $field:ident : $typ:ty),+) => {
+    ( @db_nondiesel $db:ident | $( #[$attr:meta] )* | $name:ident | $( $( #[$field_attr:meta] )* $( #[nondiesel($db_name_nondiesel:ident($db_model_nondiesel:ident))] )* $vis:vis $field:ident : $typ:ty),+) => {
         paste::paste! {
             #[allow(unused)] use $crate::db::[<__ $db _schema>]::*;
 
@@ -404,18 +471,18 @@ macro_rules! db_object {
 // Reexport the models, needs to be after the macros are defined so it can access them
 pub mod models;
 
-#[cfg(nondiesel)]
-mod nondiesel;
-
 /// Creates a back-up of the sqlite database
 /// MySQL/MariaDB and PostgreSQL are not supported.
 pub async fn backup_database(conn: &mut DbConn) -> Result<(), Error> {
     db_run! {@raw conn:
-        postgresql, mysql {
+        @nondiesel fdb {
+            todo!() // TODO: @nondiesel db_run!
+        }
+        @diesel postgresql, mysql {
             let _ = conn;
             err!("PostgreSQL and MySQL/MariaDB do not support this backup feature");
         }
-        sqlite {
+        @diesel sqlite {
             use std::path::Path;
             let db_url = CONFIG.database_url();
             let db_path = Path::new(&db_url).parent().unwrap().to_string_lossy();
@@ -429,13 +496,16 @@ pub async fn backup_database(conn: &mut DbConn) -> Result<(), Error> {
 /// Get the SQL Server version
 pub async fn get_sql_server_version(conn: &mut DbConn) -> String {
     db_run! {@raw conn:
-        postgresql, mysql {
+        @nondiesel fdb {
+            todo!() // TODO: @nondiesel db_run!
+        }
+        @diesel postgresql, mysql {
             define_sql_function!{
                 fn version() -> diesel::sql_types::Text;
             }
             diesel::select(version()).get_result::<String>(conn).unwrap_or_else(|_| "Unknown".to_string())
         }
-        sqlite {
+        @diesel sqlite {
             define_sql_function!{
                 fn sqlite_version() -> diesel::sql_types::Text;
             }

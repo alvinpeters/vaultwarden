@@ -90,7 +90,8 @@ async fn main() -> Result<(), Error> {
     schedule_jobs(pool.clone());
     crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
 
-    launch_rocket(pool, extra_debug).await // Blocks until program termination.
+    let res = launch_rocket(pool, extra_debug).await; // Blocks until program termination.
+    res
 }
 
 const HELP: &str = "\

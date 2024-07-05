@@ -134,13 +134,16 @@ impl Device {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 crate::util::retry(
                     || diesel::replace_into(devices::table).values(DeviceDb::to_db(self)).execute(conn),
                     10,
                 ).map_res("Error saving device")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = DeviceDb::to_db(self);
                 crate::util::retry(
                     || diesel::insert_into(devices::table).values(&value).on_conflict((devices::uuid, devices::user_uuid)).do_update().set(&value).execute(conn),
@@ -151,95 +154,140 @@ impl Device {
     }
 
     pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
-                .execute(conn)
-                .map_res("Error removing devices for user")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
+                    .execute(conn)
+                    .map_res("Error removing devices for user")
+            }
+        }
     }
 
     pub async fn find_by_uuid_and_user(uuid: &str, user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::uuid.eq(uuid))
-                .filter(devices::user_uuid.eq(user_uuid))
-                .first::<DeviceDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                devices::table
+                    .filter(devices::uuid.eq(uuid))
+                    .filter(devices::user_uuid.eq(user_uuid))
+                    .first::<DeviceDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::user_uuid.eq(user_uuid))
-                .load::<DeviceDb>(conn)
-                .expect("Error loading devices")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                devices::table
+                    .filter(devices::user_uuid.eq(user_uuid))
+                    .load::<DeviceDb>(conn)
+                    .expect("Error loading devices")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::uuid.eq(uuid))
-                .first::<DeviceDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                devices::table
+                    .filter(devices::uuid.eq(uuid))
+                    .first::<DeviceDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn clear_push_token_by_uuid(uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::update(devices::table)
-                .filter(devices::uuid.eq(uuid))
-                .set(devices::push_token.eq::<Option<String>>(None))
-                .execute(conn)
-                .map_res("Error removing push token")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::update(devices::table)
+                    .filter(devices::uuid.eq(uuid))
+                    .set(devices::push_token.eq::<Option<String>>(None))
+                    .execute(conn)
+                    .map_res("Error removing push token")
+            }
+        }
     }
     pub async fn find_by_refresh_token(refresh_token: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::refresh_token.eq(refresh_token))
-                .first::<DeviceDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                devices::table
+                    .filter(devices::refresh_token.eq(refresh_token))
+                    .first::<DeviceDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_latest_active_by_user(user_uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::user_uuid.eq(user_uuid))
-                .order(devices::updated_at.desc())
-                .first::<DeviceDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                devices::table
+                    .filter(devices::user_uuid.eq(user_uuid))
+                    .order(devices::updated_at.desc())
+                    .first::<DeviceDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_push_devices_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::user_uuid.eq(user_uuid))
-                .filter(devices::push_token.is_not_null())
-                .load::<DeviceDb>(conn)
-                .expect("Error loading push devices")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                devices::table
+                    .filter(devices::user_uuid.eq(user_uuid))
+                    .filter(devices::push_token.is_not_null())
+                    .load::<DeviceDb>(conn)
+                    .expect("Error loading push devices")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn check_user_has_push_device(user_uuid: &str, conn: &mut DbConn) -> bool {
-        db_run! { conn: {
-            devices::table
-            .filter(devices::user_uuid.eq(user_uuid))
-            .filter(devices::push_token.is_not_null())
-            .count()
-            .first::<i64>(conn)
-            .ok()
-            .unwrap_or(0) != 0
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                devices::table
+                .filter(devices::user_uuid.eq(user_uuid))
+                .filter(devices::push_token.is_not_null())
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0) != 0
+            }
+        }
     }
 }
 

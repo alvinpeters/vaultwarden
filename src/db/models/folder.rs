@@ -72,7 +72,10 @@ impl Folder {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(folders::table)
                     .values(FolderDb::to_db(self))
                     .execute(conn)
@@ -89,7 +92,7 @@ impl Folder {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving folder")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = FolderDb::to_db(self);
                 diesel::insert_into(folders::table)
                     .values(&value)
@@ -106,11 +109,16 @@ impl Folder {
         User::update_uuid_revision(&self.user_uuid, conn).await;
         FolderCipher::delete_all_by_folder(&self.uuid, conn).await?;
 
-        db_run! { conn: {
-            diesel::delete(folders::table.filter(folders::uuid.eq(&self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting folder")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(folders::table.filter(folders::uuid.eq(&self.uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting folder")
+            }
+        }
     }
 
     pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
@@ -121,30 +129,43 @@ impl Folder {
     }
 
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            folders::table
-                .filter(folders::uuid.eq(uuid))
-                .first::<FolderDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                folders::table
+                    .filter(folders::uuid.eq(uuid))
+                    .first::<FolderDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            folders::table
-                .filter(folders::user_uuid.eq(user_uuid))
-                .load::<FolderDb>(conn)
-                .expect("Error loading folders")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                folders::table
+                    .filter(folders::user_uuid.eq(user_uuid))
+                    .load::<FolderDb>(conn)
+                    .expect("Error loading folders")
+                    .from_db()
+            }
+        }
     }
 }
 
 impl FolderCipher {
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 // Not checking for ForeignKey Constraints here.
                 // Table folders_ciphers does not have ForeignKey Constraints which would cause conflicts.
                 // This table has no constraints pointing to itself, but only to others.
@@ -153,7 +174,7 @@ impl FolderCipher {
                     .execute(conn)
                     .map_res("Error adding cipher to folder")
             }
-            postgresql {
+            @diesel postgresql {
                 diesel::insert_into(folders_ciphers::table)
                     .values(FolderCipherDb::to_db(self))
                     .on_conflict((folders_ciphers::cipher_uuid, folders_ciphers::folder_uuid))
@@ -165,64 +186,94 @@ impl FolderCipher {
     }
 
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(
-                folders_ciphers::table
-                    .filter(folders_ciphers::cipher_uuid.eq(self.cipher_uuid))
-                    .filter(folders_ciphers::folder_uuid.eq(self.folder_uuid)),
-            )
-            .execute(conn)
-            .map_res("Error removing cipher from folder")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(
+                    folders_ciphers::table
+                        .filter(folders_ciphers::cipher_uuid.eq(self.cipher_uuid))
+                        .filter(folders_ciphers::folder_uuid.eq(self.folder_uuid)),
+                )
+                .execute(conn)
+                .map_res("Error removing cipher from folder")
+            }
+        }
     }
 
     pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(folders_ciphers::table.filter(folders_ciphers::cipher_uuid.eq(cipher_uuid)))
-                .execute(conn)
-                .map_res("Error removing cipher from folders")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(folders_ciphers::table.filter(folders_ciphers::cipher_uuid.eq(cipher_uuid)))
+                    .execute(conn)
+                    .map_res("Error removing cipher from folders")
+            }
+        }
     }
 
     pub async fn delete_all_by_folder(folder_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(folders_ciphers::table.filter(folders_ciphers::folder_uuid.eq(folder_uuid)))
-                .execute(conn)
-                .map_res("Error removing ciphers from folder")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(folders_ciphers::table.filter(folders_ciphers::folder_uuid.eq(folder_uuid)))
+                    .execute(conn)
+                    .map_res("Error removing ciphers from folder")
+            }
+        }
     }
 
     pub async fn find_by_folder_and_cipher(folder_uuid: &str, cipher_uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            folders_ciphers::table
-                .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
-                .filter(folders_ciphers::cipher_uuid.eq(cipher_uuid))
-                .first::<FolderCipherDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                folders_ciphers::table
+                    .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
+                    .filter(folders_ciphers::cipher_uuid.eq(cipher_uuid))
+                    .first::<FolderCipherDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_folder(folder_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            folders_ciphers::table
-                .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
-                .load::<FolderCipherDb>(conn)
-                .expect("Error loading folders")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                folders_ciphers::table
+                    .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
+                    .load::<FolderCipherDb>(conn)
+                    .expect("Error loading folders")
+                    .from_db()
+            }
+        }
     }
 
     /// Return a vec with (cipher_uuid, folder_uuid)
     /// This is used during a full sync so we only need one query for all folder matches.
     pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<(String, String)> {
-        db_run! { conn: {
-            folders_ciphers::table
-                .inner_join(folders::table)
-                .filter(folders::user_uuid.eq(user_uuid))
-                .select(folders_ciphers::all_columns)
-                .load::<(String, String)>(conn)
-                .unwrap_or_default()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                folders_ciphers::table
+                    .inner_join(folders::table)
+                    .filter(folders::user_uuid.eq(user_uuid))
+                    .select(folders_ciphers::all_columns)
+                    .load::<(String, String)>(conn)
+                    .unwrap_or_default()
+            }
+        }
     }
 }

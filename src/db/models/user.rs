@@ -271,7 +271,10 @@ impl User {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! {conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(users::table)
                     .values(UserDb::to_db(self))
                     .execute(conn)
@@ -288,7 +291,7 @@ impl User {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving user")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = UserDb::to_db(self);
                 diesel::insert_into(users::table) // Insert or update
                     .values(&value)
@@ -323,11 +326,16 @@ impl User {
         TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
         Invitation::take(&self.email, conn).await; // Delete invitation if any
 
-        db_run! {conn: {
-            diesel::delete(users::table.filter(users::uuid.eq(self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting user")
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(users::table.filter(users::uuid.eq(self.uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting user")
+            }
+        }
     }
 
     pub async fn update_uuid_revision(uuid: &str, conn: &mut DbConn) {
@@ -339,14 +347,19 @@ impl User {
     pub async fn update_all_revisions(conn: &mut DbConn) -> EmptyResult {
         let updated_at = Utc::now().naive_utc();
 
-        db_run! {conn: {
-            crate::util::retry(|| {
-                diesel::update(users::table)
-                    .set(users::updated_at.eq(updated_at))
-                    .execute(conn)
-            }, 10)
-            .map_res("Error updating revision date for all users")
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                crate::util::retry(|| {
+                    diesel::update(users::table)
+                        .set(users::updated_at.eq(updated_at))
+                        .execute(conn)
+                },10)
+                .map_res("Error updating revision date for all users")
+            }
+        }
     }
 
     pub async fn update_revision(&mut self, conn: &mut DbConn) -> EmptyResult {
@@ -356,37 +369,57 @@ impl User {
     }
 
     async fn _update_revision(uuid: &str, date: &NaiveDateTime, conn: &mut DbConn) -> EmptyResult {
-        db_run! {conn: {
-            crate::util::retry(|| {
-                diesel::update(users::table.filter(users::uuid.eq(uuid)))
-                    .set(users::updated_at.eq(date))
-                    .execute(conn)
-            }, 10)
-            .map_res("Error updating user revision")
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                crate::util::retry(|| {
+                    diesel::update(users::table.filter(users::uuid.eq(uuid)))
+                        .set(users::updated_at.eq(date))
+                        .execute(conn)
+                }, 10)
+                .map_res("Error updating user revision")
+            }
+        }
     }
 
     pub async fn find_by_mail(mail: &str, conn: &mut DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
-        db_run! {conn: {
-            users::table
-                .filter(users::email.eq(lower_mail))
-                .first::<UserDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                users::table
+                    .filter(users::email.eq(lower_mail))
+                    .first::<UserDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! {conn: {
-            users::table.filter(users::uuid.eq(uuid)).first::<UserDb>(conn).ok().from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                users::table.filter(users::uuid.eq(uuid)).first::<UserDb>(conn).ok().from_db()
+            }
+        }
     }
 
     pub async fn get_all(conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            users::table.load::<UserDb>(conn).expect("Error loading users").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                users::table.load::<UserDb>(conn).expect("Error loading users").from_db()
+            }
+        }
     }
 
     pub async fn last_active(&self, conn: &mut DbConn) -> Option<NaiveDateTime> {
@@ -411,7 +444,10 @@ impl Invitation {
         }
 
         db_run! {conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 // Not checking for ForeignKey Constraints here
                 // Table invitations does not have any ForeignKey Constraints.
                 diesel::replace_into(invitations::table)
@@ -419,7 +455,7 @@ impl Invitation {
                     .execute(conn)
                     .map_res("Error saving invitation")
             }
-            postgresql {
+            @diesel postgresql {
                 diesel::insert_into(invitations::table)
                     .values(InvitationDb::to_db(self))
                     .on_conflict(invitations::email)
@@ -431,22 +467,32 @@ impl Invitation {
     }
 
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
-        db_run! {conn: {
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
             diesel::delete(invitations::table.filter(invitations::email.eq(self.email)))
                 .execute(conn)
                 .map_res("Error deleting invitation")
-        }}
+            }
+        }
     }
 
     pub async fn find_by_mail(mail: &str, conn: &mut DbConn) -> Option<Self> {
         let lower_mail = mail.to_lowercase();
-        db_run! {conn: {
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
             invitations::table
                 .filter(invitations::email.eq(lower_mail))
                 .first::<InvitationDb>(conn)
                 .ok()
                 .from_db()
-        }}
+            }
+        }
     }
 
     pub async fn take(mail: &str, conn: &mut DbConn) -> bool {

@@ -38,18 +38,23 @@ impl TwoFactorIncomplete {
             return Ok(());
         }
 
-        db_run! { conn: {
-            diesel::insert_into(twofactor_incomplete::table)
-                .values((
-                    twofactor_incomplete::user_uuid.eq(user_uuid),
-                    twofactor_incomplete::device_uuid.eq(device_uuid),
-                    twofactor_incomplete::device_name.eq(device_name),
-                    twofactor_incomplete::login_time.eq(Utc::now().naive_utc()),
-                    twofactor_incomplete::ip_address.eq(ip.ip.to_string()),
-                ))
-                .execute(conn)
-                .map_res("Error adding twofactor_incomplete record")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::insert_into(twofactor_incomplete::table)
+                    .values((
+                        twofactor_incomplete::user_uuid.eq(user_uuid),
+                        twofactor_incomplete::device_uuid.eq(device_uuid),
+                        twofactor_incomplete::device_name.eq(device_name),
+                        twofactor_incomplete::login_time.eq(Utc::now().naive_utc()),
+                        twofactor_incomplete::ip_address.eq(ip.ip.to_string()),
+                    ))
+                    .execute(conn)
+                    .map_res("Error adding twofactor_incomplete record")
+            }
+        }
     }
 
     pub async fn mark_complete(user_uuid: &str, device_uuid: &str, conn: &mut DbConn) -> EmptyResult {
@@ -61,24 +66,34 @@ impl TwoFactorIncomplete {
     }
 
     pub async fn find_by_user_and_device(user_uuid: &str, device_uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            twofactor_incomplete::table
-                .filter(twofactor_incomplete::user_uuid.eq(user_uuid))
-                .filter(twofactor_incomplete::device_uuid.eq(device_uuid))
-                .first::<TwoFactorIncompleteDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                twofactor_incomplete::table
+                    .filter(twofactor_incomplete::user_uuid.eq(user_uuid))
+                    .filter(twofactor_incomplete::device_uuid.eq(device_uuid))
+                    .first::<TwoFactorIncompleteDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_logins_before(dt: &NaiveDateTime, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            twofactor_incomplete::table
-                .filter(twofactor_incomplete::login_time.lt(dt))
-                .load::<TwoFactorIncompleteDb>(conn)
-                .expect("Error loading twofactor_incomplete")
-                .from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                twofactor_incomplete::table
+                    .filter(twofactor_incomplete::login_time.lt(dt))
+                    .load::<TwoFactorIncompleteDb>(conn)
+                    .expect("Error loading twofactor_incomplete")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
@@ -86,20 +101,30 @@ impl TwoFactorIncomplete {
     }
 
     pub async fn delete_by_user_and_device(user_uuid: &str, device_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(twofactor_incomplete::table
-                           .filter(twofactor_incomplete::user_uuid.eq(user_uuid))
-                           .filter(twofactor_incomplete::device_uuid.eq(device_uuid)))
-                .execute(conn)
-                .map_res("Error in twofactor_incomplete::delete_by_user_and_device()")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(twofactor_incomplete::table
+                               .filter(twofactor_incomplete::user_uuid.eq(user_uuid))
+                               .filter(twofactor_incomplete::device_uuid.eq(device_uuid)))
+                    .execute(conn)
+                    .map_res("Error in twofactor_incomplete::delete_by_user_and_device()")
+            }
+        }
     }
 
     pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(twofactor_incomplete::table.filter(twofactor_incomplete::user_uuid.eq(user_uuid)))
-                .execute(conn)
-                .map_res("Error in twofactor_incomplete::delete_all_by_user()")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(twofactor_incomplete::table.filter(twofactor_incomplete::user_uuid.eq(user_uuid)))
+                    .execute(conn)
+                    .map_res("Error in twofactor_incomplete::delete_all_by_user()")
+            }
+        }
     }
 }

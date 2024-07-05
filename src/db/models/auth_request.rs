@@ -71,7 +71,10 @@ use crate::error::MapResult;
 impl AuthRequest {
     pub async fn save(&mut self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(auth_requests::table)
                     .values(AuthRequestDb::to_db(self))
                     .execute(conn)
@@ -88,7 +91,7 @@ impl AuthRequest {
                     Err(e) => Err(e.into()),
                 }.map_res("Error auth_request")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = AuthRequestDb::to_db(self);
                 diesel::insert_into(auth_requests::table)
                     .values(&value)
@@ -102,37 +105,57 @@ impl AuthRequest {
     }
 
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! {conn: {
-            auth_requests::table
-                .filter(auth_requests::uuid.eq(uuid))
-                .first::<AuthRequestDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                auth_requests::table
+                    .filter(auth_requests::uuid.eq(uuid))
+                    .first::<AuthRequestDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            auth_requests::table
-                .filter(auth_requests::user_uuid.eq(user_uuid))
-                .load::<AuthRequestDb>(conn).expect("Error loading auth_requests").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                auth_requests::table
+                    .filter(auth_requests::user_uuid.eq(user_uuid))
+                    .load::<AuthRequestDb>(conn).expect("Error loading auth_requests").from_db()
+            }
+        }
     }
 
     pub async fn find_created_before(dt: &NaiveDateTime, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            auth_requests::table
-                .filter(auth_requests::creation_date.lt(dt))
-                .load::<AuthRequestDb>(conn).expect("Error loading auth_requests").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                auth_requests::table
+                    .filter(auth_requests::creation_date.lt(dt))
+                    .load::<AuthRequestDb>(conn).expect("Error loading auth_requests").from_db()
+            }
+        }
     }
 
     pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(auth_requests::table.filter(auth_requests::uuid.eq(&self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting auth request")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(auth_requests::table.filter(auth_requests::uuid.eq(&self.uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting auth request")
+            }
+        }
     }
 
     pub fn check_access_code(&self, access_code: &str) -> bool {

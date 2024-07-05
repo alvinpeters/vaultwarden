@@ -316,7 +316,10 @@ impl Cipher {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(ciphers::table)
                     .values(CipherDb::to_db(self))
                     .execute(conn)
@@ -333,7 +336,7 @@ impl Cipher {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving cipher")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = CipherDb::to_db(self);
                 diesel::insert_into(ciphers::table)
                     .values(&value)
@@ -354,11 +357,16 @@ impl Cipher {
         Attachment::delete_all_by_cipher(&self.uuid, conn).await?;
         Favorite::delete_all_by_cipher(&self.uuid, conn).await?;
 
-        db_run! { conn: {
-            diesel::delete(ciphers::table.filter(ciphers::uuid.eq(&self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting cipher")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(ciphers::table.filter(ciphers::uuid.eq(&self.uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting cipher")
+            }
+        }
     }
 
     pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
@@ -526,46 +534,56 @@ impl Cipher {
     }
 
     async fn get_user_collections_access_flags(&self, user_uuid: &str, conn: &mut DbConn) -> Vec<(bool, bool)> {
-        db_run! {conn: {
-            // Check whether this cipher is in any collections accessible to the
-            // user. If so, retrieve the access flags for each collection.
-            ciphers::table
-                .filter(ciphers::uuid.eq(&self.uuid))
-                .inner_join(ciphers_collections::table.on(
-                    ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
-                .inner_join(users_collections::table.on(
-                    ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_uuid))))
-                .select((users_collections::read_only, users_collections::hide_passwords))
-                .load::<(bool, bool)>(conn)
-                .expect("Error getting user access restrictions")
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                // Check whether this cipher is in any collections accessible to the
+                // user. If so, retrieve the access flags for each collection.
+                ciphers::table
+                    .filter(ciphers::uuid.eq(&self.uuid))
+                    .inner_join(ciphers_collections::table.on(
+                        ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
+                    .inner_join(users_collections::table.on(
+                        ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
+                            .and(users_collections::user_uuid.eq(user_uuid))))
+                    .select((users_collections::read_only, users_collections::hide_passwords))
+                    .load::<(bool, bool)>(conn)
+                    .expect("Error getting user access restrictions")
+            }
+        }
     }
 
     async fn get_group_collections_access_flags(&self, user_uuid: &str, conn: &mut DbConn) -> Vec<(bool, bool)> {
         if !CONFIG.org_groups_enabled() {
             return Vec::new();
         }
-        db_run! {conn: {
-            ciphers::table
-                .filter(ciphers::uuid.eq(&self.uuid))
-                .inner_join(ciphers_collections::table.on(
-                    ciphers::uuid.eq(ciphers_collections::cipher_uuid)
-                ))
-                .inner_join(collections_groups::table.on(
-                    collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
-                ))
-                .inner_join(groups_users::table.on(
-                    groups_users::groups_uuid.eq(collections_groups::groups_uuid)
-                ))
-                .inner_join(users_organizations::table.on(
-                    users_organizations::uuid.eq(groups_users::users_organizations_uuid)
-                ))
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .select((collections_groups::read_only, collections_groups::hide_passwords))
-                .load::<(bool, bool)>(conn)
-                .expect("Error getting group access restrictions")
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                ciphers::table
+                    .filter(ciphers::uuid.eq(&self.uuid))
+                    .inner_join(ciphers_collections::table.on(
+                        ciphers::uuid.eq(ciphers_collections::cipher_uuid)
+                    ))
+                    .inner_join(collections_groups::table.on(
+                        collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+                    ))
+                    .inner_join(groups_users::table.on(
+                        groups_users::groups_uuid.eq(collections_groups::groups_uuid)
+                    ))
+                    .inner_join(users_organizations::table.on(
+                        users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                    ))
+                    .filter(users_organizations::user_uuid.eq(user_uuid))
+                    .select((collections_groups::read_only, collections_groups::hide_passwords))
+                    .load::<(bool, bool)>(conn)
+                    .expect("Error getting group access restrictions")
+            }
+        }
     }
 
     pub async fn is_write_accessible_to_user(&self, user_uuid: &str, conn: &mut DbConn) -> bool {
@@ -593,25 +611,35 @@ impl Cipher {
     }
 
     pub async fn get_folder_uuid(&self, user_uuid: &str, conn: &mut DbConn) -> Option<String> {
-        db_run! {conn: {
-            folders_ciphers::table
-                .inner_join(folders::table)
-                .filter(folders::user_uuid.eq(&user_uuid))
-                .filter(folders_ciphers::cipher_uuid.eq(&self.uuid))
-                .select(folders_ciphers::folder_uuid)
-                .first::<String>(conn)
-                .ok()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                folders_ciphers::table
+                    .inner_join(folders::table)
+                    .filter(folders::user_uuid.eq(&user_uuid))
+                    .filter(folders_ciphers::cipher_uuid.eq(&self.uuid))
+                    .select(folders_ciphers::folder_uuid)
+                    .first::<String>(conn)
+                    .ok()
+            }
+        }
     }
 
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! {conn: {
-            ciphers::table
-                .filter(ciphers::uuid.eq(uuid))
-                .first::<CipherDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                ciphers::table
+                    .filter(ciphers::uuid.eq(uuid))
+                    .first::<CipherDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     // Find all ciphers accessible or visible to the specified user.
@@ -628,70 +656,42 @@ impl Cipher {
     // owner/admin, but they can still be accessed via the org vault view.
     pub async fn find_by_user(user_uuid: &str, visible_only: bool, conn: &mut DbConn) -> Vec<Self> {
         if CONFIG.org_groups_enabled() {
-            db_run! {conn: {
-                let mut query = ciphers::table
-                    .left_join(ciphers_collections::table.on(
-                            ciphers::uuid.eq(ciphers_collections::cipher_uuid)
-                            ))
-                    .left_join(users_organizations::table.on(
-                            ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
-                            .and(users_organizations::user_uuid.eq(user_uuid))
-                            .and(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
-                            ))
-                    .left_join(users_collections::table.on(
-                            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
-                            // Ensure that users_collections::user_uuid is NULL for unconfirmed users.
-                            .and(users_organizations::user_uuid.eq(users_collections::user_uuid))
-                            ))
-                    .left_join(groups_users::table.on(
-                            groups_users::users_organizations_uuid.eq(users_organizations::uuid)
-                            ))
-                    .left_join(groups::table.on(
-                            groups::uuid.eq(groups_users::groups_uuid)
-                            ))
-                    .left_join(collections_groups::table.on(
-                            collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid).and(
-                                collections_groups::groups_uuid.eq(groups::uuid)
-                                )
-                            ))
-                    .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
-                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
-                    .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
-                    .or_filter(groups::access_all.eq(true)) // Access via groups
-                    .or_filter(collections_groups::collections_uuid.is_not_null()) // Access via groups
-                    .into_boxed();
-
-                if !visible_only {
-                    query = query.or_filter(
-                        users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin/owner
-                        );
+            db_run! {conn:
+                @nondiesel {
+                    todo!() // TODO: @nondiesel db_run!
                 }
-
-                query
-                    .select(ciphers::all_columns)
-                    .distinct()
-                    .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
-            }}
-        } else {
-            db_run! {conn: {
-                let mut query = ciphers::table
-                    .left_join(ciphers_collections::table.on(
-                            ciphers::uuid.eq(ciphers_collections::cipher_uuid)
-                            ))
-                    .left_join(users_organizations::table.on(
-                            ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
-                            .and(users_organizations::user_uuid.eq(user_uuid))
-                            .and(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
-                            ))
-                    .left_join(users_collections::table.on(
-                            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
-                            // Ensure that users_collections::user_uuid is NULL for unconfirmed users.
-                            .and(users_organizations::user_uuid.eq(users_collections::user_uuid))
-                            ))
-                    .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
-                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
-                    .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
-                    .into_boxed();
+                @diesel {
+                    let mut query = ciphers::table
+                        .left_join(ciphers_collections::table.on(
+                                ciphers::uuid.eq(ciphers_collections::cipher_uuid)
+                                ))
+                        .left_join(users_organizations::table.on(
+                                ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
+                                .and(users_organizations::user_uuid.eq(user_uuid))
+                                .and(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+                                ))
+                        .left_join(users_collections::table.on(
+                                ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
+                                // Ensure that users_collections::user_uuid is NULL for unconfirmed users.
+                                .and(users_organizations::user_uuid.eq(users_collections::user_uuid))
+                                ))
+                        .left_join(groups_users::table.on(
+                                groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+                                ))
+                        .left_join(groups::table.on(
+                                groups::uuid.eq(groups_users::groups_uuid)
+                                ))
+                        .left_join(collections_groups::table.on(
+                                collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid).and(
+                                    collections_groups::groups_uuid.eq(groups::uuid)
+                                    )
+                                ))
+                        .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
+                        .or_filter(users_organizations::access_all.eq(true)) // access_all in org
+                        .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
+                        .or_filter(groups::access_all.eq(true)) // Access via groups
+                        .or_filter(collections_groups::collections_uuid.is_not_null()) // Access via groups
+                        .into_boxed();
 
                     if !visible_only {
                         query = query.or_filter(
@@ -699,11 +699,49 @@ impl Cipher {
                             );
                     }
 
-                query
-                    .select(ciphers::all_columns)
-                    .distinct()
-                    .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
-            }}
+                    query
+                        .select(ciphers::all_columns)
+                        .distinct()
+                        .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+                }
+            }
+        } else {
+            db_run! {conn:
+                @nondiesel {
+                    todo!() // TODO: @nondiesel db_run!
+                }
+                @diesel {
+                    let mut query = ciphers::table
+                        .left_join(ciphers_collections::table.on(
+                                ciphers::uuid.eq(ciphers_collections::cipher_uuid)
+                                ))
+                        .left_join(users_organizations::table.on(
+                                ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
+                                .and(users_organizations::user_uuid.eq(user_uuid))
+                                .and(users_organizations::status.eq(UserOrgStatus::Confirmed as i32))
+                                ))
+                        .left_join(users_collections::table.on(
+                                ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
+                                // Ensure that users_collections::user_uuid is NULL for unconfirmed users.
+                                .and(users_organizations::user_uuid.eq(users_collections::user_uuid))
+                                ))
+                        .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
+                        .or_filter(users_organizations::access_all.eq(true)) // access_all in org
+                        .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
+                        .into_boxed();
+
+                        if !visible_only {
+                            query = query.or_filter(
+                                users_organizations::atype.le(UserOrgType::Admin as i32) // Org admin/owner
+                                );
+                        }
+
+                    query
+                        .select(ciphers::all_columns)
+                        .distinct()
+                        .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+                }
+            }
         }
     }
 
@@ -714,128 +752,168 @@ impl Cipher {
 
     // Find all ciphers directly owned by the specified user.
     pub async fn find_owned_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            ciphers::table
-                .filter(
-                    ciphers::user_uuid.eq(user_uuid)
-                    .and(ciphers::organization_uuid.is_null())
-                )
-                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                ciphers::table
+                    .filter(
+                        ciphers::user_uuid.eq(user_uuid)
+                        .and(ciphers::organization_uuid.is_null())
+                    )
+                    .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+            }
+        }
     }
 
     pub async fn count_owned_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
-        db_run! {conn: {
-            ciphers::table
-                .filter(ciphers::user_uuid.eq(user_uuid))
-                .count()
-                .first::<i64>(conn)
-                .ok()
-                .unwrap_or(0)
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                ciphers::table
+                    .filter(ciphers::user_uuid.eq(user_uuid))
+                    .count()
+                    .first::<i64>(conn)
+                    .ok()
+                    .unwrap_or(0)
+            }
+        }
     }
 
     pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            ciphers::table
-                .filter(ciphers::organization_uuid.eq(org_uuid))
-                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                ciphers::table
+                    .filter(ciphers::organization_uuid.eq(org_uuid))
+                    .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+            }
+        }
     }
 
     pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
-        db_run! {conn: {
-            ciphers::table
-                .filter(ciphers::organization_uuid.eq(org_uuid))
-                .count()
-                .first::<i64>(conn)
-                .ok()
-                .unwrap_or(0)
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                ciphers::table
+                    .filter(ciphers::organization_uuid.eq(org_uuid))
+                    .count()
+                    .first::<i64>(conn)
+                    .ok()
+                    .unwrap_or(0)
+            }
+        }
     }
 
     pub async fn find_by_folder(folder_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            folders_ciphers::table.inner_join(ciphers::table)
-                .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
-                .select(ciphers::all_columns)
-                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                folders_ciphers::table.inner_join(ciphers::table)
+                    .filter(folders_ciphers::folder_uuid.eq(folder_uuid))
+                    .select(ciphers::all_columns)
+                    .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+            }
+        }
     }
 
     /// Find all ciphers that were deleted before the specified datetime.
     pub async fn find_deleted_before(dt: &NaiveDateTime, conn: &mut DbConn) -> Vec<Self> {
-        db_run! {conn: {
-            ciphers::table
-                .filter(ciphers::deleted_at.lt(dt))
-                .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                ciphers::table
+                    .filter(ciphers::deleted_at.lt(dt))
+                    .load::<CipherDb>(conn).expect("Error loading ciphers").from_db()
+            }
+        }
     }
 
     pub async fn get_collections(&self, user_id: String, conn: &mut DbConn) -> Vec<String> {
-        db_run! {conn: {
-            ciphers_collections::table
-            .inner_join(collections::table.on(
-                collections::uuid.eq(ciphers_collections::collection_uuid)
-            ))
-            .inner_join(users_organizations::table.on(
-                users_organizations::org_uuid.eq(collections::org_uuid).and(
-                    users_organizations::user_uuid.eq(user_id.clone())
-                )
-            ))
-            .left_join(users_collections::table.on(
-                users_collections::collection_uuid.eq(ciphers_collections::collection_uuid).and(
-                    users_collections::user_uuid.eq(user_id.clone())
-                )
-            ))
-            .filter(ciphers_collections::cipher_uuid.eq(&self.uuid))
-            .filter(users_collections::user_uuid.eq(user_id).or( // User has access to collection
-                users_organizations::access_all.eq(true).or( // User has access all
-                    users_organizations::atype.le(UserOrgType::Admin as i32) // User is admin or owner
-                )
-            ))
-            .select(ciphers_collections::collection_uuid)
-            .load::<String>(conn).unwrap_or_default()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                ciphers_collections::table
+                .inner_join(collections::table.on(
+                    collections::uuid.eq(ciphers_collections::collection_uuid)
+                ))
+                .inner_join(users_organizations::table.on(
+                    users_organizations::org_uuid.eq(collections::org_uuid).and(
+                        users_organizations::user_uuid.eq(user_id.clone())
+                    )
+                ))
+                .left_join(users_collections::table.on(
+                    users_collections::collection_uuid.eq(ciphers_collections::collection_uuid).and(
+                        users_collections::user_uuid.eq(user_id.clone())
+                    )
+                ))
+                .filter(ciphers_collections::cipher_uuid.eq(&self.uuid))
+                .filter(users_collections::user_uuid.eq(user_id).or( // User has access to collection
+                    users_organizations::access_all.eq(true).or( // User has access all
+                        users_organizations::atype.le(UserOrgType::Admin as i32) // User is admin or owner
+                    )
+                ))
+                .select(ciphers_collections::collection_uuid)
+                .load::<String>(conn).unwrap_or_default()
+            }
+        }
     }
 
     /// Return a Vec with (cipher_uuid, collection_uuid)
     /// This is used during a full sync so we only need one query for all collections accessible.
     pub async fn get_collections_with_cipher_by_user(user_id: String, conn: &mut DbConn) -> Vec<(String, String)> {
-        db_run! {conn: {
-            ciphers_collections::table
-            .inner_join(collections::table.on(
-                collections::uuid.eq(ciphers_collections::collection_uuid)
-            ))
-            .inner_join(users_organizations::table.on(
-                users_organizations::org_uuid.eq(collections::org_uuid).and(
-                    users_organizations::user_uuid.eq(user_id.clone())
-                )
-            ))
-            .left_join(users_collections::table.on(
-                users_collections::collection_uuid.eq(ciphers_collections::collection_uuid).and(
-                    users_collections::user_uuid.eq(user_id.clone())
-                )
-            ))
-            .left_join(groups_users::table.on(
-                groups_users::users_organizations_uuid.eq(users_organizations::uuid)
-            ))
-            .left_join(groups::table.on(
-                groups::uuid.eq(groups_users::groups_uuid)
-            ))
-            .left_join(collections_groups::table.on(
-                collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid).and(
-                    collections_groups::groups_uuid.eq(groups::uuid)
-                )
-            ))
-            .or_filter(users_collections::user_uuid.eq(user_id)) // User has access to collection
-            .or_filter(users_organizations::access_all.eq(true)) // User has access all
-            .or_filter(users_organizations::atype.le(UserOrgType::Admin as i32)) // User is admin or owner
-            .or_filter(groups::access_all.eq(true)) //Access via group
-            .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
-            .select(ciphers_collections::all_columns)
-            .distinct()
-            .load::<(String, String)>(conn).unwrap_or_default()
-        }}
+        db_run! {conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                ciphers_collections::table
+                .inner_join(collections::table.on(
+                    collections::uuid.eq(ciphers_collections::collection_uuid)
+                ))
+                .inner_join(users_organizations::table.on(
+                    users_organizations::org_uuid.eq(collections::org_uuid).and(
+                        users_organizations::user_uuid.eq(user_id.clone())
+                    )
+                ))
+                .left_join(users_collections::table.on(
+                    users_collections::collection_uuid.eq(ciphers_collections::collection_uuid).and(
+                        users_collections::user_uuid.eq(user_id.clone())
+                    )
+                ))
+                .left_join(groups_users::table.on(
+                    groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+                ))
+                .left_join(groups::table.on(
+                    groups::uuid.eq(groups_users::groups_uuid)
+                ))
+                .left_join(collections_groups::table.on(
+                    collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid).and(
+                        collections_groups::groups_uuid.eq(groups::uuid)
+                    )
+                ))
+                .or_filter(users_collections::user_uuid.eq(user_id)) // User has access to collection
+                .or_filter(users_organizations::access_all.eq(true)) // User has access all
+                .or_filter(users_organizations::atype.le(UserOrgType::Admin as i32)) // User is admin or owner
+                .or_filter(groups::access_all.eq(true)) //Access via group
+                .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
+                .select(ciphers_collections::all_columns)
+                .distinct()
+                .load::<(String, String)>(conn).unwrap_or_default()
+            }
+        }
     }
 }

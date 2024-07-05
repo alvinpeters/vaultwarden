@@ -93,7 +93,10 @@ impl OrgPolicy {
 impl OrgPolicy {
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(org_policies::table)
                     .values(OrgPolicyDb::to_db(self))
                     .execute(conn)
@@ -110,7 +113,7 @@ impl OrgPolicy {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving org_policy")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = OrgPolicyDb::to_db(self);
                 // We need to make sure we're not going to violate the unique constraint on org_uuid and atype.
                 // This happens automatically on other DBMS backends due to replace_into(). PostgreSQL does
@@ -135,68 +138,98 @@ impl OrgPolicy {
     }
 
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(org_policies::table.filter(org_policies::uuid.eq(self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting org_policy")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(org_policies::table.filter(org_policies::uuid.eq(self.uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting org_policy")
+            }
+        }
     }
 
     pub async fn find_by_uuid(uuid: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            org_policies::table
-                .filter(org_policies::uuid.eq(uuid))
-                .first::<OrgPolicyDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                org_policies::table
+                    .filter(org_policies::uuid.eq(uuid))
+                    .first::<OrgPolicyDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_org(org_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            org_policies::table
-                .filter(org_policies::org_uuid.eq(org_uuid))
-                .load::<OrgPolicyDb>(conn)
-                .expect("Error loading org_policy")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                org_policies::table
+                    .filter(org_policies::org_uuid.eq(org_uuid))
+                    .load::<OrgPolicyDb>(conn)
+                    .expect("Error loading org_policy")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_confirmed_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            org_policies::table
-                .inner_join(
-                    users_organizations::table.on(
-                        users_organizations::org_uuid.eq(org_policies::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid)))
-                )
-                .filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
-                )
-                .select(org_policies::all_columns)
-                .load::<OrgPolicyDb>(conn)
-                .expect("Error loading org_policy")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                org_policies::table
+                    .inner_join(
+                        users_organizations::table.on(
+                            users_organizations::org_uuid.eq(org_policies::org_uuid)
+                                .and(users_organizations::user_uuid.eq(user_uuid)))
+                    )
+                    .filter(
+                        users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    )
+                    .select(org_policies::all_columns)
+                    .load::<OrgPolicyDb>(conn)
+                    .expect("Error loading org_policy")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_org_and_type(org_uuid: &str, policy_type: OrgPolicyType, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            org_policies::table
-                .filter(org_policies::org_uuid.eq(org_uuid))
-                .filter(org_policies::atype.eq(policy_type as i32))
-                .first::<OrgPolicyDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                org_policies::table
+                    .filter(org_policies::org_uuid.eq(org_uuid))
+                    .filter(org_policies::atype.eq(policy_type as i32))
+                    .first::<OrgPolicyDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn delete_all_by_organization(org_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(org_policies::table.filter(org_policies::org_uuid.eq(org_uuid)))
-                .execute(conn)
-                .map_res("Error deleting org_policy")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(org_policies::table.filter(org_policies::org_uuid.eq(org_uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting org_policy")
+            }
+        }
     }
 
     pub async fn find_accepted_and_confirmed_by_user_and_active_policy(
@@ -204,26 +237,31 @@ impl OrgPolicy {
         policy_type: OrgPolicyType,
         conn: &mut DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
-            org_policies::table
-                .inner_join(
-                    users_organizations::table.on(
-                        users_organizations::org_uuid.eq(org_policies::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid)))
-                )
-                .filter(
-                    users_organizations::status.eq(UserOrgStatus::Accepted as i32)
-                )
-                .or_filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
-                )
-                .filter(org_policies::atype.eq(policy_type as i32))
-                .filter(org_policies::enabled.eq(true))
-                .select(org_policies::all_columns)
-                .load::<OrgPolicyDb>(conn)
-                .expect("Error loading org_policy")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                org_policies::table
+                    .inner_join(
+                        users_organizations::table.on(
+                            users_organizations::org_uuid.eq(org_policies::org_uuid)
+                                .and(users_organizations::user_uuid.eq(user_uuid)))
+                    )
+                    .filter(
+                        users_organizations::status.eq(UserOrgStatus::Accepted as i32)
+                    )
+                    .or_filter(
+                        users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    )
+                    .filter(org_policies::atype.eq(policy_type as i32))
+                    .filter(org_policies::enabled.eq(true))
+                    .select(org_policies::all_columns)
+                    .load::<OrgPolicyDb>(conn)
+                    .expect("Error loading org_policy")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_confirmed_by_user_and_active_policy(
@@ -231,23 +269,28 @@ impl OrgPolicy {
         policy_type: OrgPolicyType,
         conn: &mut DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
-            org_policies::table
-                .inner_join(
-                    users_organizations::table.on(
-                        users_organizations::org_uuid.eq(org_policies::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid)))
-                )
-                .filter(
-                    users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
-                )
-                .filter(org_policies::atype.eq(policy_type as i32))
-                .filter(org_policies::enabled.eq(true))
-                .select(org_policies::all_columns)
-                .load::<OrgPolicyDb>(conn)
-                .expect("Error loading org_policy")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                org_policies::table
+                    .inner_join(
+                        users_organizations::table.on(
+                            users_organizations::org_uuid.eq(org_policies::org_uuid)
+                                .and(users_organizations::user_uuid.eq(user_uuid)))
+                    )
+                    .filter(
+                        users_organizations::status.eq(UserOrgStatus::Confirmed as i32)
+                    )
+                    .filter(org_policies::atype.eq(policy_type as i32))
+                    .filter(org_policies::enabled.eq(true))
+                    .select(org_policies::all_columns)
+                    .load::<OrgPolicyDb>(conn)
+                    .expect("Error loading org_policy")
+                    .from_db()
+            }
+        }
     }
 
     /// Returns true if the user belongs to an org that has enabled the specified policy type,

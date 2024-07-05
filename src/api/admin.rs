@@ -77,6 +77,7 @@ static DB_TYPE: Lazy<&str> = Lazy::new(|| {
             DbConnType::sqlite => "SQLite",
             DbConnType::mysql => "MySQL",
             DbConnType::postgresql => "PostgreSQL",
+            DbConnType::fdb => "FoundationDB",
         })
         .unwrap_or("Unknown")
 });

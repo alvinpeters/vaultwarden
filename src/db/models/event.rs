@@ -180,13 +180,16 @@ impl Event {
     /// Basic Queries
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 diesel::replace_into(event::table)
                 .values(EventDb::to_db(self))
                 .execute(conn)
                 .map_res("Error saving event")
             }
-            postgresql {
+            @diesel postgresql {
                 diesel::insert_into(event::table)
                 .values(EventDb::to_db(self))
                 .on_conflict(event::uuid)
@@ -206,7 +209,10 @@ impl Event {
         db_run! { conn:
             // Unfortunately SQLite does not support inserting multiple records at the same time
             // We loop through the events here and insert them one at a time.
-            sqlite {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite {
                 for event in events {
                     diesel::insert_or_ignore_into(event::table)
                     .values(EventDb::to_db(&event))
@@ -215,7 +221,7 @@ impl Event {
                 }
                 Ok(())
             }
-            mysql {
+            @diesel mysql {
                 let events: Vec<EventDb> = events.iter().map(EventDb::to_db).collect();
                 diesel::insert_or_ignore_into(event::table)
                 .values(&events)
@@ -223,7 +229,7 @@ impl Event {
                 .unwrap_or_default();
                 Ok(())
             }
-            postgresql {
+            @diesel postgresql {
                 let events: Vec<EventDb> = events.iter().map(EventDb::to_db).collect();
                 diesel::insert_into(event::table)
                 .values(&events)
@@ -236,11 +242,16 @@ impl Event {
     }
 
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(event::table.filter(event::uuid.eq(self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting event")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(event::table.filter(event::uuid.eq(self.uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting event")
+            }
+        }
     }
 
     /// ##############
@@ -251,27 +262,37 @@ impl Event {
         end: &NaiveDateTime,
         conn: &mut DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
-            event::table
-                .filter(event::org_uuid.eq(org_uuid))
-                .filter(event::event_date.between(start, end))
-                .order_by(event::event_date.desc())
-                .limit(Self::PAGE_SIZE)
-                .load::<EventDb>(conn)
-                .expect("Error filtering events")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                event::table
+                    .filter(event::org_uuid.eq(org_uuid))
+                    .filter(event::event_date.between(start, end))
+                    .order_by(event::event_date.desc())
+                    .limit(Self::PAGE_SIZE)
+                    .load::<EventDb>(conn)
+                    .expect("Error filtering events")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
-        db_run! { conn: {
-            event::table
-                .filter(event::org_uuid.eq(org_uuid))
-                .count()
-                .first::<i64>(conn)
-                .ok()
-                .unwrap_or(0)
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                event::table
+                    .filter(event::org_uuid.eq(org_uuid))
+                    .count()
+                    .first::<i64>(conn)
+                    .ok()
+                    .unwrap_or(0)
+            }
+        }
     }
 
     pub async fn find_by_org_and_user_org(
@@ -281,19 +302,24 @@ impl Event {
         end: &NaiveDateTime,
         conn: &mut DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
-            event::table
-                .inner_join(users_organizations::table.on(users_organizations::uuid.eq(user_org_uuid)))
-                .filter(event::org_uuid.eq(org_uuid))
-                .filter(event::event_date.between(start, end))
-                .filter(event::user_uuid.eq(users_organizations::user_uuid.nullable()).or(event::act_user_uuid.eq(users_organizations::user_uuid.nullable())))
-                .select(event::all_columns)
-                .order_by(event::event_date.desc())
-                .limit(Self::PAGE_SIZE)
-                .load::<EventDb>(conn)
-                .expect("Error filtering events")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                event::table
+                    .inner_join(users_organizations::table.on(users_organizations::uuid.eq(user_org_uuid)))
+                    .filter(event::org_uuid.eq(org_uuid))
+                    .filter(event::event_date.between(start, end))
+                    .filter(event::user_uuid.eq(users_organizations::user_uuid.nullable()).or(event::act_user_uuid.eq(users_organizations::user_uuid.nullable())))
+                    .select(event::all_columns)
+                    .order_by(event::event_date.desc())
+                    .limit(Self::PAGE_SIZE)
+                    .load::<EventDb>(conn)
+                    .expect("Error filtering events")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_cipher_uuid(
@@ -302,26 +328,36 @@ impl Event {
         end: &NaiveDateTime,
         conn: &mut DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
-            event::table
-                .filter(event::cipher_uuid.eq(cipher_uuid))
-                .filter(event::event_date.between(start, end))
-                .order_by(event::event_date.desc())
-                .limit(Self::PAGE_SIZE)
-                .load::<EventDb>(conn)
-                .expect("Error filtering events")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                event::table
+                    .filter(event::cipher_uuid.eq(cipher_uuid))
+                    .filter(event::event_date.between(start, end))
+                    .order_by(event::event_date.desc())
+                    .limit(Self::PAGE_SIZE)
+                    .load::<EventDb>(conn)
+                    .expect("Error filtering events")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn clean_events(conn: &mut DbConn) -> EmptyResult {
         if let Some(days_to_retain) = CONFIG.events_days_retain() {
             let dt = Utc::now().naive_utc() - TimeDelta::try_days(days_to_retain).unwrap();
-            db_run! { conn: {
-                diesel::delete(event::table.filter(event::event_date.lt(dt)))
-                .execute(conn)
-                .map_res("Error cleaning old events")
-            }}
+            db_run! { conn:
+                @nondiesel {
+                    todo!() // TODO: @nondiesel db_run!
+                }
+                @diesel {
+                    diesel::delete(event::table.filter(event::event_date.lt(dt)))
+                    .execute(conn)
+                    .map_res("Error cleaning old events")
+                }
+            }
         } else {
             Ok(())
         }

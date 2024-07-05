@@ -73,7 +73,10 @@ impl TwoFactor {
 impl TwoFactor {
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(twofactor::table)
                     .values(TwoFactorDb::to_db(self))
                     .execute(conn)
@@ -90,7 +93,7 @@ impl TwoFactor {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving twofactor")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = TwoFactorDb::to_db(self);
                 // We need to make sure we're not going to violate the unique constraint on user_uuid and atype.
                 // This happens automatically on other DBMS backends due to replace_into(). PostgreSQL does
@@ -111,7 +114,11 @@ impl TwoFactor {
     }
 
     pub async fn delete(self, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
             diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting twofactor")
@@ -119,43 +126,63 @@ impl TwoFactor {
     }
 
     pub async fn find_by_user(user_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            twofactor::table
-                .filter(twofactor::user_uuid.eq(user_uuid))
-                .filter(twofactor::atype.lt(1000)) // Filter implementation types
-                .load::<TwoFactorDb>(conn)
-                .expect("Error loading twofactor")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                twofactor::table
+                    .filter(twofactor::user_uuid.eq(user_uuid))
+                    .filter(twofactor::atype.lt(1000)) // Filter implementation types
+                    .load::<TwoFactorDb>(conn)
+                    .expect("Error loading twofactor")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_user_and_type(user_uuid: &str, atype: i32, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            twofactor::table
-                .filter(twofactor::user_uuid.eq(user_uuid))
-                .filter(twofactor::atype.eq(atype))
-                .first::<TwoFactorDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                twofactor::table
+                    .filter(twofactor::user_uuid.eq(user_uuid))
+                    .filter(twofactor::atype.eq(atype))
+                    .first::<TwoFactorDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn delete_all_by_user(user_uuid: &str, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(user_uuid)))
-                .execute(conn)
-                .map_res("Error deleting twofactors")
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(user_uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting twofactors")
+            }
+        }
     }
 
     pub async fn migrate_u2f_to_webauthn(conn: &mut DbConn) -> EmptyResult {
-        let u2f_factors = db_run! { conn: {
-            twofactor::table
-                .filter(twofactor::atype.eq(TwoFactorType::U2f as i32))
-                .load::<TwoFactorDb>(conn)
-                .expect("Error loading twofactor")
-                .from_db()
-        }};
+        let u2f_factors = db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: @nondiesel db_run!
+            }
+            @diesel {
+                twofactor::table
+                    .filter(twofactor::atype.eq(TwoFactorType::U2f as i32))
+                    .load::<TwoFactorDb>(conn)
+                    .expect("Error loading twofactor")
+                    .from_db()
+            }
+        };
 
         use crate::api::core::two_factor::webauthn::U2FRegistration;
         use crate::api::core::two_factor::webauthn::{get_webauthn_registrations, WebauthnRegistration};

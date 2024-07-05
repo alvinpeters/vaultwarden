@@ -5,32 +5,33 @@ use crate::db::models::EventType;
 use std::error::Error as StdError;
 
 macro_rules! make_error {
-    ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
+    ( $( $( #[$attr:meta] )* $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
         const BAD_REQUEST: u16 = 400;
 
-        pub enum ErrorKind { $($name( $ty )),+ }
+        pub enum ErrorKind { $( $( #[$attr] )* $name( $ty )),+ }
 
         #[derive(Debug)]
         pub struct ErrorEvent { pub event: EventType }
         pub struct Error { message: String, error: ErrorKind, error_code: u16, event: Option<ErrorEvent> }
 
-        $(impl From<$ty> for Error {
+        $( $( #[$attr] )*  impl From<$ty> for Error {
             fn from(err: $ty) -> Self { Error::from((stringify!($name), err)) }
         })+
-        $(impl<S: Into<String>> From<(S, $ty)> for Error {
+        $( $( #[$attr] )*  impl<S: Into<String>> From<(S, $ty)> for Error {
             fn from(val: (S, $ty)) -> Self {
                 Error { message: val.0.into(), error: ErrorKind::$name(val.1), error_code: BAD_REQUEST, event: None }
             }
         })+
         impl StdError for Error {
             fn source(&self) -> Option<&(dyn StdError + 'static)> {
-                match &self.error {$( ErrorKind::$name(e) => $src_fn(e), )+}
+                match &self.error {$( $( #[$attr] )* ErrorKind::$name(e) => $src_fn(e), )+}
             }
         }
         impl std::fmt::Display for Error {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match &self.error {$(
-                   ErrorKind::$name(e) => f.write_str(&$usr_msg_fun(e, &self.message)),
+                    $( #[$attr] )*
+                    ErrorKind::$name(e) => f.write_str(&$usr_msg_fun(e, &self.message)),
                 )+}
             }
         }
@@ -54,6 +55,9 @@ use std::io::Error as IoErr;
 use std::time::SystemTimeError as TimeErr;
 use webauthn_rs::error::WebauthnError as WebauthnErr;
 use yubico::yubicoerror::YubicoError as YubiErr;
+
+#[cfg(nondiesel)]
+use crate::db::nondiesel::NondieselConnectionError as NondieselConErr;
 
 #[derive(Serialize)]
 pub struct Empty {}
@@ -88,6 +92,8 @@ make_error! {
     OpenSSL(SSLErr):   _has_source, _api_error,
     Rocket(RocketErr): _has_source, _api_error,
 
+    #[cfg(nondiesel)]
+    NondieselCon(NondieselConErr): _has_source, _api_error,
     DieselCon(DieselConErr): _has_source, _api_error,
     Webauthn(WebauthnErr):   _has_source, _api_error,
 }

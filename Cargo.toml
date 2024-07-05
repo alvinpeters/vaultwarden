@@ -13,13 +13,16 @@ publish = false
 build = "build.rs"
 
 [features]
-default = ["sqlite"]
+default = []
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
+# Diesel-based databases
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
 postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
 sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
+# Non-Diesel based databases
 fdb = ["foundationdb", "nondiesel"]
+# Connection pool and traits for non-diesel database backends
 nondiesel = []
 # Enable to use a vendored and statically linked openssl
 vendored_openssl = ["openssl/vendored"]
@@ -75,7 +78,7 @@ tokio = { version = "1.38.0", features = ["rt-multi-thread", "fs", "io-util", "p
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.117"
 
-# FoundationDB
+# FoundationDB, a distributed NoSQL key-value store. Cannot use diesel so have to make do.
 foundationdb = { version = "0.9.0", features = ["fdb-7_1", "embedded-fdb-include"], optional = true }
 
 # A safe, extensible ORM and Query builder
@@ -221,9 +224,13 @@ rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "deny", priority = -1 }
 trivial_casts = "deny"
 trivial_numeric_casts = "deny"
-unused = { level = "deny", priority = -1 }
-unused_import_braces = "deny"
-unused_lifetimes = "deny"
+# TODO: Set back to deny before pushing/merging
+unused = { level = "warn", priority = -1 }
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+#unused = { level = "deny", priority = -1 }
+#unused_import_braces = "deny"
+#unused_lifetimes = "deny"
 deprecated_in_future = "deny"
 
 [lints.clippy]
