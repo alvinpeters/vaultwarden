@@ -1,9 +1,12 @@
 use std::{sync::Arc, time::Duration};
-
+use deadpool::managed::Object;
 use diesel::{
     connection::SimpleConnection,
-    r2d2::{ConnectionManager, CustomizeConnection, Pool, PooledConnection},
+    r2d2::{ConnectionManager, CustomizeConnection, Pool as DieselPool, PooledConnection},
 };
+
+#[cfg(nondiesel)]
+use deadpool::managed::Pool as NonDieselPool;
 
 use rocket::{
     http::Status,
@@ -21,6 +24,18 @@ use crate::{
     CONFIG,
 };
 
+#[cfg(nondiesel)]
+pub mod nondiesel;
+
+#[cfg(nondiesel)]
+use nondiesel::NonDieselConnManager;
+use crate::db::nondiesel::fdb::FdbConnection;
+use crate::db::nondiesel::{NonDieselConnError, NonDieselDbError};
+
+#[cfg(fdb)]
+#[path = "schemas/fdb/schema.rs"]
+pub mod __fdb_schema;
+
 #[cfg(sqlite)]
 #[path = "schemas/sqlite/schema.rs"]
 pub mod __sqlite_schema;
@@ -32,6 +47,23 @@ pub mod __mysql_schema;
 #[cfg(postgresql)]
 #[path = "schemas/postgresql/schema.rs"]
 pub mod __postgresql_schema;
+
+// async fn fun() -> Result<Object<NonDieselConnManager<FdbConnection>>, Error> {
+//     let manager = NonDieselConnManager::new(&CONFIG)?;
+//     let timeout_duration = Option::from(Duration::from_secs(CONFIG.database_timeout()));
+//     let pool = NonDieselPool::builder(manager)
+//         .max_size(CONFIG.database_max_conns() as usize)
+//         .runtime(deadpool::Runtime::Tokio1)
+//         .create_timeout(timeout_duration)
+//         .recycle_timeout(timeout_duration)
+//         .wait_timeout(timeout_duration)
+//         .build()
+//         .map_err(|_| Error::from(NonDieselDbError::StartFailed))?;
+//     .map_err(|_| Error::from(NonDieselDbError::StartFailed))?;
+//     let c = pool.get().await.map_err(|a| ).unwrap();
+//     Ok(c)
+//
+// }
 
 // These changes are based on Rocket 0.5-rc wrapper of Diesel: https://github.com/SergioBenitez/Rocket/blob/v0.5-rc/contrib/sync_db_pools
 
@@ -52,10 +84,13 @@ where
 
 // This is used to generate the main DbConn and DbPool enums, which contain one variant for each database supported
 macro_rules! generate_connections {
-    ( $( $name:ident: $ty:ty ),+ ) => {
+    ( $( @nondiesel $name_nd:ident: $ty_nd:ty, )+ $( @diesel $name:ident: $ty:ty ),+ ) => {
         #[allow(non_camel_case_types, dead_code)]
         #[derive(Eq, PartialEq)]
-        pub enum DbConnType { $( $name, )+ }
+        pub enum DbConnType {
+            $( $name_nd, )+
+            $( $name, )+
+        }
 
         pub struct DbConn {
             conn: Arc<Mutex<Option<DbConnInner>>>,
@@ -63,7 +98,10 @@ macro_rules! generate_connections {
         }
 
         #[allow(non_camel_case_types)]
-        pub enum DbConnInner { $( #[cfg($name)] $name(PooledConnection<ConnectionManager< $ty >>), )+ }
+        pub enum DbConnInner {
+            $( #[cfg($name_nd)] $name_nd(Object<NonDieselConnManager< $ty_nd >>), )+
+            $( #[cfg($name)] $name(PooledConnection<ConnectionManager< $ty >>), )+
+        }
 
         #[derive(Debug)]
         pub struct DbConnOptions {
@@ -90,7 +128,10 @@ macro_rules! generate_connections {
 
         #[allow(non_camel_case_types)]
         #[derive(Clone)]
-        pub enum DbPoolInner { $( #[cfg($name)] $name(Pool<ConnectionManager< $ty >>), )+ }
+        pub enum DbPoolInner {
+            $( #[cfg($name_nd)] $name_nd(NonDieselPool<NonDieselConnManager< $ty_nd >>), )+
+            $( #[cfg($name)] $name(DieselPool<ConnectionManager< $ty >>), )+
+        }
 
         impl Drop for DbConn {
             fn drop(&mut self) {
@@ -127,26 +168,48 @@ macro_rules! generate_connections {
                 let conn_type = DbConnType::from_url(&url)?;
 
                 match conn_type { $(
+                    DbConnType::$name_nd => {
+                        #[cfg($name_nd)]
+                        {
+                            let manager = NonDieselConnManager::new(&CONFIG)?;
+                            let timeout_duration = Option::from(Duration::from_secs(CONFIG.database_timeout()));
+                            let pool = NonDieselPool::builder(manager)
+                                .max_size(CONFIG.database_max_conns() as usize)
+                                .runtime(deadpool::Runtime::Tokio1)
+                                .create_timeout(timeout_duration)
+                                .recycle_timeout(timeout_duration)
+                                .wait_timeout(timeout_duration)
+                                .build()
+                                .map_err(|_| Error::from(NonDieselConnError::CreatePoolFail))?;
+                            Ok(DbPool {
+                                pool: Some(DbPoolInner::$name_nd(pool)),
+                                semaphore: Arc::new(Semaphore::new(CONFIG.database_max_conns() as usize)),
+                            })
+                        }
+                        #[cfg(not($name_nd))]
+                        unreachable!("Trying to use a non-diesel DB backend when it's feature is disabled")
+                    },
+                )+$(
                     DbConnType::$name => {
                         #[cfg($name)]
                         {
                             paste::paste!{ [< $name _migrations >]::run_migrations()?; }
                             let manager = ConnectionManager::new(&url);
-                            let pool = Pool::builder()
+                            let pool = DieselPool::builder()
                                 .max_size(CONFIG.database_max_conns())
                                 .connection_timeout(Duration::from_secs(CONFIG.database_timeout()))
                                 .connection_customizer(Box::new(DbConnOptions{
                                     init_stmts: conn_type.get_init_stmts()
                                 }))
                                 .build(manager)
-                                .map_res("Failed to create pool")?;
+                                .map_res("Failed to create a diesel pool")?;
                             Ok(DbPool {
                                 pool: Some(DbPoolInner::$name(pool)),
                                 semaphore: Arc::new(Semaphore::new(CONFIG.database_max_conns() as usize)),
                             })
                         }
                         #[cfg(not($name))]
-                        unreachable!("Trying to use a DB backend when it's feature is disabled")
+                        unreachable!("Trying to use a diesel DB backend when it's feature is disabled")
                     },
                 )+ }
             }
@@ -161,6 +224,17 @@ macro_rules! generate_connections {
                 };
 
                 match self.pool.as_ref().expect("DbPool.pool should always be Some()") {  $(
+                    #[cfg($name_nd)]
+                    DbPoolInner::$name_nd(p) => {
+                        let pool = p.clone();
+                        let c = pool.get().await.map_err(|_| Error::from(NonDieselConnError::GetConnFail))?;
+
+                        Ok(DbConn {
+                            conn: Arc::new(Mutex::new(Some(DbConnInner::$name_nd(c)))),
+                            permit: Some(permit)
+                        })
+                    },
+                )+$(
                     #[cfg($name)]
                     DbPoolInner::$name(p) => {
                         let pool = p.clone();
@@ -179,22 +253,31 @@ macro_rules! generate_connections {
 
 #[cfg(not(query_logger))]
 generate_connections! {
-    sqlite: diesel::sqlite::SqliteConnection,
-    mysql: diesel::mysql::MysqlConnection,
-    postgresql: diesel::pg::PgConnection
+    @nondiesel fdb: nondiesel::fdb::FdbConnection,
+    @diesel sqlite: diesel::sqlite::SqliteConnection,
+    @diesel mysql: diesel::mysql::MysqlConnection,
+    @diesel postgresql: diesel::pg::PgConnection
 }
 
 #[cfg(query_logger)]
 generate_connections! {
-    sqlite: diesel_logger::LoggingConnection<diesel::sqlite::SqliteConnection>,
-    mysql: diesel_logger::LoggingConnection<diesel::mysql::MysqlConnection>,
-    postgresql: diesel_logger::LoggingConnection<diesel::pg::PgConnection>
+    @nondiesel fdb: nondiesel::fdb::FdbConnection,
+    @diesel sqlite: diesel_logger::LoggingConnection<diesel::sqlite::SqliteConnection>,
+    @diesel mysql: diesel_logger::LoggingConnection<diesel::mysql::MysqlConnection>,
+    @diesel postgresql: diesel_logger::LoggingConnection<diesel::pg::PgConnection>
 }
 
 impl DbConnType {
     pub fn from_url(url: &str) -> Result<DbConnType, Error> {
+        // Fdb
+        if url.ends_with(".cluster") {
+            #[cfg(fdb)]
+            return Ok(DbConnType::sqlite);
+
+            #[cfg(not(fdb))]
+            err!("`DATABASE_URL` looks like a SQLite URL, but 'sqlite' feature is not enabled")
         // Mysql
-        if url.starts_with("mysql:") {
+        } else if url.starts_with("mysql:") {
             #[cfg(mysql)]
             return Ok(DbConnType::mysql);
 
@@ -209,7 +292,7 @@ impl DbConnType {
             #[cfg(not(postgresql))]
             err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
 
-        //Sqlite
+        // Sqlite
         } else {
             #[cfg(sqlite)]
             return Ok(DbConnType::sqlite);
@@ -230,6 +313,7 @@ impl DbConnType {
 
     pub fn default_init_stmts(&self) -> String {
         match self {
+            Self::fdb => String::new(),
             Self::sqlite => "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;".to_string(),
             Self::mysql => String::new(),
             Self::postgresql => String::new(),
@@ -241,15 +325,19 @@ impl DbConnType {
 macro_rules! db_run {
     // Same for all dbs
     ( $conn:ident: $body:block ) => {
-        db_run! { $conn: sqlite, mysql, postgresql $body }
+        db_run! { $conn: @nondiesel fdb { todo!() } @diesel sqlite, mysql, postgresql $body }
     };
 
     ( @raw $conn:ident: $body:block ) => {
         db_run! { @raw $conn: sqlite, mysql, postgresql $body }
     };
 
+    ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {
+        db_run! { $conn: @nondiesel fdb { todo!() } $( @diesel $($db),+ $body )+ }
+    };
+
     // Different code for each db
-    ( $conn:ident: $( $($db:ident),+ $body:block )+ ) => {{
+    ( $conn:ident: $( @nondiesel $($db_nd:ident),+ $body_nd:block )* $( @diesel $($db:ident),+ $body:block )+ ) => {{
         #[allow(unused)] use diesel::prelude::*;
         #[allow(unused)] use $crate::db::FromDb;
 
@@ -257,6 +345,16 @@ macro_rules! db_run {
         let mut conn = conn.lock_owned().await;
         match conn.as_mut().expect("internal invariant broken: self.connection is Some") {
                 $($(
+                #[cfg($db_nd)]
+                $crate::db::DbConnInner::$db_nd($conn) => {
+                    paste::paste! {
+                        #[allow(unused)] use $crate::db::[<__ $db_nd _schema>]::{self as schema, *};
+                        //#[allow(unused)] use [<__ $db_nd _model>]::*;
+                    }
+
+                    tokio::task::block_in_place(move || { $body_nd }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
+                },
+            )+)*$($(
                 #[cfg($db)]
                 $crate::db::DbConnInner::$db($conn) => {
                     paste::paste! {
@@ -370,9 +468,9 @@ pub mod models;
 /// MySQL/MariaDB and PostgreSQL are not supported.
 pub async fn backup_database(conn: &mut DbConn) -> Result<(), Error> {
     db_run! {@raw conn:
-        postgresql, mysql {
+        fdb, postgresql, mysql {
             let _ = conn;
-            err!("PostgreSQL and MySQL/MariaDB do not support this backup feature");
+            err!("FoundationDB, PostgreSQL and MySQL/MariaDB do not support this backup feature");
         }
         sqlite {
             use std::path::Path;
@@ -388,6 +486,9 @@ pub async fn backup_database(conn: &mut DbConn) -> Result<(), Error> {
 /// Get the SQL Server version
 pub async fn get_sql_server_version(conn: &mut DbConn) -> String {
     db_run! {@raw conn:
+        fdb {
+            "7.1 compatible".to_string() // TODO: Use Database.get_client_status() for this later
+        }
         postgresql, mysql {
             define_sql_function!{
                 fn version() -> diesel::sql_types::Text;

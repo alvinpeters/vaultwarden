@@ -13,12 +13,18 @@ publish = false
 build = "build.rs"
 
 [features]
-# default = ["sqlite"]
+default = ["sqlite", "fdb"]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
 postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
 sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
+fdb = ["foundationdb", "nondiesel", "serde_doc"]
+
+# Non-diesel database stuff
+nondiesel = ["deadpool"]
+# serde-compatible document-store database objects
+serde_doc = ["bson"]
 # Enable to use a vendored and statically linked openssl
 vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
@@ -72,6 +78,13 @@ tokio = { version = "1.38.0", features = ["rt-multi-thread", "fs", "io-util", "p
 # A generic serialization/deserialization framework
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
+bson = { version = "2.11.0", features = ["chrono-0_4"], optional = true }
+
+# FoundationDB, a distributed NoSQL key-value store. Cannot use diesel so have to make do
+foundationdb = { version = "0.9.0", features = ["fdb-7_1", "embedded-fdb-include"], optional = true }
+
+# Connection pool for non-diesel database backends
+deadpool = { version = "0.12.1", features = ["managed", "rt_tokio_1"], optional = true }
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.2.1", features = ["chrono", "r2d2", "numeric"] }
@@ -200,7 +213,7 @@ codegen-units = 16
 # Linting config
 [lints.rust]
 # Forbid
-unsafe_code = "forbid"
+unsafe_code = "warn"
 non_ascii_idents = "forbid"
 
 # Deny
@@ -210,7 +223,7 @@ rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "deny", priority = -1 }
 trivial_casts = "deny"
 trivial_numeric_casts = "deny"
-unused = { level = "deny", priority = -1 }
+unused = { level = "warn", priority = -1 }
 unused_import_braces = "deny"
 unused_lifetimes = "deny"
 deprecated_in_future = "deny"

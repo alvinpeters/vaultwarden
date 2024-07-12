@@ -74,6 +74,7 @@ pub fn catchers() -> Vec<Catcher> {
 static DB_TYPE: Lazy<&str> = Lazy::new(|| {
     DbConnType::from_url(&CONFIG.database_url())
         .map(|t| match t {
+            DbConnType::fdb => "FoundationDB",
             DbConnType::sqlite => "SQLite",
             DbConnType::mysql => "MySQL",
             DbConnType::postgresql => "PostgreSQL",

@@ -9,6 +9,12 @@ fn main() {
     println!("cargo:rustc-cfg=mysql");
     #[cfg(feature = "postgresql")]
     println!("cargo:rustc-cfg=postgresql");
+    #[cfg(feature = "fdb")]
+    println!("cargo:rustc-cfg=fdb");
+    #[cfg(feature = "nondiesel")]
+    println!("cargo:rustc-cfg=nondiesel");
+    #[cfg(feature = "serde_doc")]
+    println!("cargo:rustc-cfg=serde_doc");
     #[cfg(feature = "query_logger")]
     println!("cargo:rustc-cfg=query_logger");
 
