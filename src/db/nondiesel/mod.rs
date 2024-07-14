@@ -47,7 +47,11 @@ impl<C> Manager for NonDieselConnManager<C> where C: NonDieselConnection {
 
 #[derive(Debug)]
 pub(crate) enum NonDieselDbError {
-    TrxFail
+    TrxFail,
+    TrxCommitFail,
+    IndexAlreadyExists,
+    PkAlreadyExists,
+    IndexMismatchError
 }
 
 impl Display for NonDieselDbError {
