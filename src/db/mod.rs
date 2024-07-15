@@ -428,12 +428,36 @@ macro_rules! db_object {
         // Create the normal struct, without attributes
         $( pub struct $name { $( /*$( #[$field_attr] )**/ $vis $field : $typ, )+ } )+
 
+        //#[cfg(fdb)]
+        //pub mod __fdb_model        { $( db_object! { @db_nd fdb     |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
         #[cfg(sqlite)]
         pub mod __sqlite_model     { $( db_object! { @db sqlite     |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
         #[cfg(mysql)]
         pub mod __mysql_model      { $( db_object! { @db mysql      |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
         #[cfg(postgresql)]
         pub mod __postgresql_model { $( db_object! { @db postgresql |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
+    };
+
+    ( @db_nd $db:ident | $( #[$attr:meta] )* | $name:ident | $( $( #[$field_attr:meta] )*   $vis:vis $field:ident : $typ:ty),+) => {
+        paste::paste! {
+            #[allow(unused)] use super::*;
+            #[allow(unused)] use $crate::db::[<__ $db _schema>]::*;
+
+            pub struct [<$name Db>] { $(
+                $( #[$field_attr] )* $vis $field : $typ,
+            )+ }
+
+            impl [<$name Db>] {
+                #[allow(clippy::wrong_self_convention)]
+                #[inline(always)] pub fn to_db(x: &super::$name) -> Self { Self { $( $field: x.$field.clone(), )+ } }
+            }
+
+            impl $crate::db::FromDb for [<$name Db>] {
+                type Output = super::$name;
+                #[allow(clippy::wrong_self_convention)]
+                #[inline(always)] fn from_db(self) -> Self::Output { super::$name { $( $field: self.$field, )+ } }
+            }
+        }
     };
 
     ( @db $db:ident | $( #[$attr:meta] )* | $name:ident | $( $( #[$field_attr:meta] )* $vis:vis $field:ident : $typ:ty),+) => {

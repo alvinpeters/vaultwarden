@@ -28,7 +28,14 @@ pub(crate) struct NonDieselConnManager<C> where C: NonDieselConnection {
 
 impl<C> NonDieselConnManager<C> where C: NonDieselConnection {
     pub(crate) fn new(config: &Config) -> Result<Self, Error> {
-        todo!()
+        C::start();
+        todo!();
+    }
+}
+
+impl<C> Drop for NonDieselConnManager<C> where C: NonDieselConnection {
+    fn drop(&mut self) {
+        C::stop().expect("failed to stop database connector")
     }
 }
 
@@ -50,6 +57,7 @@ pub(crate) enum NonDieselDbError {
     TrxFail,
     TrxCommitFail,
     IndexAlreadyExists,
+    SerializationFail,
     PkAlreadyExists,
     IndexMismatchError
 }

@@ -1,9 +1,12 @@
 use std::sync::Mutex;
+
 use foundationdb::{Database, Transaction};
 use foundationdb::api::NetworkAutoStop;
+use foundationdb::tuple::Subspace;
 use once_cell::sync::Lazy;
+
 use crate::config::Config;
-use crate::db::nondiesel::{NonDieselConnection, NonDieselConnError};
+use crate::db::nondiesel::{NonDieselConnection, NonDieselConnError, NonDieselDbError};
 
 static FDB_NETWORK_CLIENT: Lazy<Mutex<Option<NetworkAutoStop>>> = Lazy::new(|| {
     // Safe as long as it gets dropped on shutdown
@@ -56,45 +59,123 @@ impl NonDieselConnection for FdbConnection {
     }
 }
 
+pub mod trx_helpers {
+    use super::*;
+
+    pub async fn set_unique_index(
+        trx: &Transaction, index_subspace: Subspace, new_index: &[u8], table_key: &[u8], ser_key_tuple: &[u8]
+    ) -> Result<(), NonDieselDbError> {
+        // TODO: Remove unwraps
+        // Check if the indexed 'column' already exists
+        if let Some(old_index) = trx.get(table_key, false).await.unwrap() {
+            let old_index_key = index_subspace.pack(&old_index.as_ref());
+            // Check if index entry exists
+            if let Some(old_index_pk) = trx.get(&old_index_key, false).await.unwrap() {
+                // Check if the old index entry matches the current primary key tuple
+                if old_index_pk.as_ref() != ser_key_tuple {
+                    return Err(NonDieselDbError::IndexMismatchError);
+                }
+                if old_index.as_ref() == new_index {
+                    // Old and new index matches, do nothing.
+                    return Ok(());
+                }
+                // Delete it
+                trx.clear(&old_index_key);
+            } else {
+                // Indexed column already exists but not the index entry itself
+                // This might be an error but let's ignore this for now
+            }
+        }
+        let new_index_key = index_subspace.pack(&new_index);
+        if let Some(existing_pk) = trx.get(&new_index_key, false).await.unwrap() {
+            return Err(NonDieselDbError::IndexAlreadyExists);
+        }
+        // Set to current
+        trx.set(&new_index_key, ser_key_tuple);
+        // The caller should commit this
+        Ok(())
+    }
+
+    pub async fn set_multi_index(
+        trx: &Transaction, index_subspace: Subspace, new_index: &[u8], table_key: &[u8], ser_key_tuple: &[u8]
+    ) -> Result<(), NonDieselDbError> {
+        // TODO: Remove unwraps
+        // Check if the indexed 'column' already exists
+        if let Some(old_index) = trx.get(table_key, false).await.unwrap() {
+            let old_index_key = index_subspace.pack(&old_index.as_ref());
+            // Check if index entry exists
+            if let Some(old_index_pk) = trx.get(&old_index_key, false).await.unwrap() {
+                // Check if the old index entry matches the current primary key tuple
+                if old_index_pk.as_ref() != ser_key_tuple {
+                    return Err(NonDieselDbError::IndexMismatchError);
+                }
+                if old_index.as_ref() == new_index {
+                    // Old and new index matches, do nothing.
+                    return Ok(());
+                }
+                // Delete it
+                trx.clear(&old_index_key);
+            } else {
+                // Indexed column already exists but not the index entry itself
+                // This might be an error but let's ignore this for now
+            }
+        }
+        let new_index_key = index_subspace.pack(&new_index);
+        if let Some(existing_pk) = trx.get(&new_index_key, false).await.unwrap() {
+            return Err(NonDieselDbError::IndexAlreadyExists);
+        }
+        // Set to current
+        trx.set(&new_index_key, ser_key_tuple);
+        // The caller should commit this
+        Ok(())
+    }
+}
+
 
 
 #[macro_export]
 macro_rules! fdb_table {
-    // (
-    //     $table:ident ( $( $key_name:ident: $key_ty:ty ),+ ) $( ( $( $index_name:ident:$index_ty:ty ),+ ) )? {
-    //         $( $attr_name:ident: $attr_ty:ty = $col_num:expr ),+
-    //     }
-    //
-    //     $( $extras:item )*
-    // ) => {
-    //     $table ( $( $key_name: $key_ty:ty ),+ ) $( ( $( $index_name:ident:$index_ty:ty ),+ ) )? {
-    //         $( $attr_name:ident: $attr_ty:ty = $col_num:expr ),+
-    //     }
-    //
-    //     $( $extras:item )*
-    // };
     (
-        $table:ident $key:tt $( <- ( $( $index_name:ident ),+ ) )? {
+        $table:ident $key:tt $( $( UNIQUE ( $( $unique_index_name:ident ),+ ) )? $( MULTI ( $( $multi_index_name:ident ),+ ) )? INDEX )? {
             $( $attr_name:ident: $attr_ty:ty = $col_num:expr ),+
         }
 
         $( $extras:item )*
     ) => {
-
         fdb_table! {
-            @nested $table $key $( $key ( $( $index_name ; $key ),+ ) )? {
-                $( $attr_name: $attr_ty = $col_num ; $key ),+
+            @private_nested {
+                name: $table,
+                primary_keys: $key,
+                $(
+                index_parent_pk: $key,
+                $(unique_indices_with_associated_pk:
+                    ( $( $unique_index_name ; $key ),+ ), )?
+                $(multi_indices_with_associated_pk:
+                    ( $( $multi_index_name:ident ; $key ),+ ), )?
+                )?
+                attributes_with_associated_pk:
+                    $( ( $attr_name: $attr_ty = $col_num ; $key ) ),+
+                extra_items:
+                    $( $extras )*
             }
-
-            $( $extras )*
         }
     };
     (
-        @nested $table:ident ( $( $key_name:ident ),+ ) $(  ( $( $ip_k_name:ident ),+ ) ( $( $index_name:ident ; ( $( $i_k_name:ident ),+ ) ),+ ) )? {
-            $( $attr_name:ident: $attr_ty:ty = $col_num:expr ; ( $( $a_k_name:ident ),+ )  ),+
+        @private_nested {
+            name: $table:ident,
+            primary_keys: ( $( $key_name:ident ),+ ),
+            $(
+            index_parent_pk: ( $( $index_k_name:ident ),+ ),
+            $(unique_indices_with_associated_pk:
+                ( $( $unique_index_name:ident ; ( $( $ui_k_name:ident ),+ ) ),+ ), )?
+            $(multi_indices_with_associated_pk:
+                ( $( $multi_index_name:ident ; ( $( $mi_k_name:ident ),+ ) ),+ ), )?
+            )?
+            attributes_with_associated_pk:
+                $( ( $attr_name:ident: $attr_ty:ty = $col_num:expr ; ( $( $a_k_name:ident ),+ ) ) ),+
+            extra_items:
+                $( $extras:item )*
         }
-
-        $( $extras:item )*
     ) => {
         paste::paste! {
             #[allow(non_camel_case_types)]
@@ -104,81 +185,60 @@ macro_rules! fdb_table {
             pub mod $table {
                 use ::foundationdb::Transaction;
                 use ::foundationdb::tuple::Subspace;
-                use ::foundationdb::tuple::TuplePack;
                 use $crate::db::nondiesel::{NonDieselConnection, NonDieselDbError};
+                use $crate::db::nondiesel::fdb::trx_helpers::*;
                 use $crate::api::EmptyResult;
 
                 const TABLE_SUBSPACE: &[u8] = stringify!([<$table _tbl>]).as_bytes();
-                const PK_COLS: &[Column] = &[ $( Column::[<$key_name:camel>] ),+ ];
+                const PK_COLS: &[Col] = &[ $( Col::[<$key_name:camel>] ),+ ];
                 $(
-                const INDEX_SUBSPACE: &[u8] = stringify!({<$table _idx>}).as_bytes();
-                const INDEX_COLS: &[Column] = &[$( Column::[<$index_name:camel>] ),+];
+                $(
+                const U_INDEX_SUBSPACE: &[u8] = stringify!({<$table _u_i>}).as_bytes();
+                const U_INDEX_COLS: &[Col] = &[$( Col::[<$unique_index_name:camel>] ),+];
 
-                fn index_subspace<T: TuplePack>(index_col: &T) -> Subspace {
-                    Subspace::from_bytes(INDEX_SUBSPACE).subspace(index_col)
+                fn u_index_col_subspace(index_col: Col) -> Subspace {
+                    Subspace::from_bytes(U_INDEX_SUBSPACE).subspace(&(index_col as u16))
                 }
 
-                async fn set_index(trx: &Transaction, index_subspace: Subspace, new_index: &[u8], table_key: &[u8], ser_key_tuple: &[u8]) -> Result<(), NonDieselDbError> {
-                    // TODO: Remove unwraps
-                    // Check if the indexed 'column' already exists
-                    if let Some(old_index) = trx.get(table_key, false).await.unwrap() {
-                        let old_index_key = index_subspace.pack(&old_index.as_ref());
-                        // Check if index entry exists
-                        if let Some(old_index_pk) = trx.get(&old_index_key, false).await.unwrap() {
-                            // Check if the old index entry matches the current primary key tuple
-                            if old_index_pk.as_ref() != ser_key_tuple {
-                                return Err(NonDieselDbError::IndexMismatchError);
-                            }
-                            if old_index.as_ref() == new_index {
-                                // Old and new index matches, do nothing.
-                                return Ok(());
-                            }
-                            // Delete it
-                            trx.clear(&old_index_key);
-                        } else {
-                            // Indexed column already exists but not the index entry itself
-                            // This might be an error but let's ignore this for now
-                        }
-                    }
-                    let new_index_key = index_subspace.pack(&new_index);
-                    if let Some(existing_pk) = trx.get(&new_index_key, false).await.unwrap() {
-                        return Err(NonDieselDbError::IndexAlreadyExists);
-                    }
-                    // Set to current
-                    trx.set(&new_index_key, ser_key_tuple);
-                    // The caller should commit this
-                    Ok(())
+                )?
+                $(
+                const M_INDEX_SUBSPACE: &[u8] = stringify!({<$table _m_i>}).as_bytes();
+                const M_INDEX_COLS: &[Col] = &[$( Col::[<$multi_index_name:camel>] ),+];
+
+                fn m_index_col_subspace(index_col: Col) -> Subspace {
+                    Subspace::from_bytes(M_INDEX_SUBSPACE).subspace(&(index_col as u16))
                 }
+                )?
                 )?
 
                 // Needed for primary key and index types
                 $( type [<$attr_name:camel Type>] = $attr_ty; )+
 
                 #[repr(u8)]
-                pub enum Column {
+                enum Col {
                     $( [<$attr_name:camel>] = $col_num ),+
                 }
 
-                fn key_subspace<T: TuplePack>($($key_name: &T),+) -> Subspace {
+                fn key_subspace($($key_name: &[<$key_name:camel Type>]),+) -> Subspace {
                     Subspace::from_bytes(TABLE_SUBSPACE)
                     $(  .subspace($key_name) )+
                 }
 
 
                 #[derive(Serialize, Deserialize)]
-                pub struct table {
+                pub struct [<$table:camel Db>] {
                     // #[serde(skip)]
                     // _subspace: Subspace,
                     $( pub $attr_name: $attr_ty ),+
                 }
 
-                impl table {
+                impl [<$table:camel Db>] {
                     pub async fn get(trx: &Transaction, $($key_name: &[<$key_name:camel Type>]),+) -> Result<Option<Self>, NonDieselDbError> {
-                        let key_subspace = key_subspace($( &$key_name ),+);
+                        let key_subspace = key_subspace($( $key_name ),+);
                         // TODO: Remove unwrap
                         let res = Self {
                             $( $attr_name: bson::from_slice(
-                                trx.get(&key_subspace.pack(&(Column::[<$attr_name:camel>] as u16)), false)
+                                trx.get(&key_subspace.pack(&(Col::[<$attr_name:camel>] as u16)), false)
                                     .await
                                     .unwrap() // TODO: Database error
                                     .unwrap() // TODO: Means its missing, return Ok(None)
@@ -189,27 +249,70 @@ macro_rules! fdb_table {
                         Ok(Some(res))
                     }
 
-                    pub async fn set(self, trx: Transaction, val: &table) -> Result<(), NonDieselDbError> {
+                    pub async fn set(&self, trx: Transaction) -> Result<(), NonDieselDbError> {
                         // TODO: Remove unwrap
                         // Serialize all attributes
                         $( let $attr_name = bson::to_vec(&self.$attr_name).unwrap(); )+
                         // Primary keys
-                        let key_subspace = key_subspace($( &$key_name ),+);
+                        let key_subspace = key_subspace($( &self.$key_name ),+);
                         $(
-                        let ser_key_tuple = bson::to_vec(&($( &self.$ip_k_name ),+)).unwrap();
-                        $(
-                        set_index(
+                        let ser_key_tuple = bson::to_vec(&($( &self.$index_k_name ),+)).unwrap();
+                        $($(
+                        set_unique_index(
                             &trx,
-                            index_subspace(&(Column::[<$index_name:camel>] as u16)),
-                            &$index_name,
-                            &key_subspace.pack(&(Column::[<$index_name:camel>] as u16)),
+                            u_index_col_subspace(Col::[<$unique_index_name:camel>]),
+                            &$unique_index_name,
+                            &key_subspace.pack(&(Col::[<$unique_index_name:camel>] as u16)),
                             &ser_key_tuple
                         ).await?;
-                        )+
+                        )+)?
+                        $($(
+                        set_multi_index(
+                            &trx,
+                            m_index_col_subspace(Col::[<$multi_index_name:camel>]),
+                            &$multi_index_name,
+                            &key_subspace.pack(&(Col::[<$multi_index_name:camel>] as u16)),
+                            &ser_key_tuple
+                        ).await?;
+                        )+)?
+
                         )?
-                        $( trx.set(&key_subspace.pack(&(Column::[<$attr_name:camel>] as u16)), &$attr_name); )+
+                        $( trx.set(&key_subspace.pack(&(Col::[<$attr_name:camel>] as u16)), &$attr_name); )+
                         trx.commit().await.map(|_| ()).map_err(|_| NonDieselDbError::TrxCommitFail)
                     }
+
+                    pub async fn delete(trx: Transaction, $($key_name: &[<$key_name:camel Type>]),+) -> Result<(), NonDieselDbError> {
+                        let key_subspace = key_subspace($( $key_name ),+);
+                        trx.clear_subspace_range(&key_subspace);
+                        trx.commit().await.map(|_| ()).map_err(|_| NonDieselDbError::TrxCommitFail)
+                    }
+
+                    $(
+                    // Same method names will ensure conflict; prohibiting declaring an attribute as
+                    // both unique and multi index.
+                    $($(
+                    pub async fn [<get_by_ $unique_index_name>](trx: &Transaction, $unique_index_name: &[<$unique_index_name:camel Type>]) -> Result<Option<Self>, NonDieselDbError> {
+                        // TODO: Remove unwraps
+                        let index_subspace = u_index_col_subspace(Col::[<$unique_index_name:camel>]);
+                        // let Some(res) = trx.get(&bson::to_vec($index_name).unwrap(), false).await.unwrap() else {
+                        //     return Ok(None);
+                        // };
+                        todo!()
+                        //Ok(Some(bson::from_slice(res.as_ref()).unwrap()))
+                    }
+                    )+)?
+                    $($(
+                    pub async fn [<get_by_ $multi_index_name>](trx: &Transaction, $multi_index_name: &[<$multi_index_name:camel Type>]) -> Result<Vec<Self>, NonDieselDbError> {
+                        // TODO: Remove unwraps
+                        let index_subspace = set_multi_index(Col::[<$multi_index_name:camel>]);
+                        // let Some(res) = trx.get(&bson::to_vec($index_name).unwrap(), false).await.unwrap() else {
+                        //     return Ok(None);
+                        // };
+                        todo!()
+                        //Ok(Some(bson::from_slice(res.as_ref()).unwrap()))
+                    }
+                    )+)?
+                    )?
                 }
 
                 $(
@@ -225,35 +328,38 @@ macro_rules! fdb_table {
                     }
                 }
 
+                impl std::borrow::Borrow<$attr_ty> for $attr_name {
+                    fn borrow(&self) -> &$attr_ty {
+                        &self.val
+                    }
+                }
+
                 impl $attr_name {
-
-                    async fn get(trx: &Transaction, $([<$a_k_name _key>]: &[<$a_k_name:camel Type>]),+) -> Result<Self, NonDieselDbError> {
-                        paste::paste! {
-                            // let subspace = trx.subspace(&(Column::[<$attr_name:camel>] as u16));
-                        }
-                        Ok(Self {
-                            val: todo!()
-                        })
+                    fn into_inner(self) -> $attr_ty {
+                        self.val
                     }
 
-                    async fn set(trx: Transaction, $([<$a_k_name _key>]: &[<$a_k_name:camel Type>],)+ $attr_name: $attr_ty) ->  Result<(), NonDieselDbError> {
-
-                        todo!()
+                    async fn get(trx: &Transaction, $([<$a_k_name _key>]: &[<$a_k_name:camel Type>]),+) -> Result<Option<Self>, NonDieselDbError> {
+                        let key = key_subspace($( [<$a_k_name _key>] ),+).pack(&(Col::[<$attr_name:camel>] as u16));
+                        let Some(val_slice) = trx.get(&key, false).await.unwrap() else {
+                            return Ok(None);
+                        };
+                        Ok(Some(Self {
+                            val: bson::from_slice(val_slice.as_ref()).unwrap()
+                        }))
                     }
+
+                    async fn set(trx: Transaction, $([<$a_k_name _key>]: &[<$a_k_name:camel Type>],)+ $attr_name: &$attr_ty) ->  Result<(), NonDieselDbError> {
+                        let key = key_subspace($( [<$a_k_name _key>] ),+).pack(&(Col::[<$attr_name:camel>] as u16));
+                        let ser = bson::to_vec($attr_name).unwrap();
+                        trx.set(&key, &ser);
+                        let _res = trx.commit().await.unwrap();
+                        Ok(())
+                    }
+
+
                 }
                 )+
-
-                $(
-                pub mod index {
-                    use super::*;
-
-                    $(
-                    pub async fn [<get_pk_by_ $index_name>](trx: &Transaction, $index_name: [<$index_name:camel Type>]) -> Result<($([<$i_k_name:camel Type>]),+), NonDieselDbError> {
-                        todo!()
-                    }
-                    )+
-                }
-                )?
 
                 $( $extras )*
             }
@@ -263,14 +369,14 @@ macro_rules! fdb_table {
 
 #[macro_export]
 macro_rules! fdb_key {
-    ($name:ident -> $key:ident: $ty:ty) => {
+    ($name:ident -> $key_name:ident: $key_ty:ty) => {
 
     };
 }
 
 #[macro_export]
 macro_rules! fdb_key_value {
-    () => {};
+    ($name:ident -> ($key_name:ident: $key_ty:ty = $val_name:ident: $val_ty:ty)) => {};
 }
 
 #[macro_export]

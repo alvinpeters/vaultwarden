@@ -1,4 +1,3 @@
-use crate::db::__fdb_schema::group::table;
 use crate::{fdb_table, fdb_key};
 
 fdb_table! {
@@ -159,7 +158,7 @@ fdb_table! {
 }
 
 fdb_table! {
-    user (uuid) {
+    user (uuid) UNIQUE (email) INDEX {
         uuid: String = 0,
         enabled: bool = 1,
         created_at: bson::DateTime = 2,
@@ -199,7 +198,7 @@ fdb_table! {
 // }
 
 fdb_table! {
-    group (uuid, name) <- (name) {
+    group (uuid, name) UNIQUE (organizations_uuid) INDEX {
         uuid: String = 0,
         organizations_uuid: String = 1,
         name: String = 2,
@@ -209,6 +208,8 @@ fdb_table! {
         revision_date: bson::DateTime = 6
     }
 }
+
+
 
 // PostgreSQL schema for reference below
 // table! {
