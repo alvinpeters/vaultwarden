@@ -443,9 +443,7 @@ macro_rules! db_object {
             #[allow(unused)] use super::*;
             #[allow(unused)] use $crate::db::[<__ $db _schema>]::*;
 
-            pub struct [<$name Db>] { $(
-                $( #[$field_attr] )* $vis $field : $typ,
-            )+ }
+            // ModelDb with same attributes should be declared in the schema module.
 
             impl [<$name Db>] {
                 #[allow(clippy::wrong_self_convention)]
@@ -455,7 +453,7 @@ macro_rules! db_object {
             impl $crate::db::FromDb for [<$name Db>] {
                 type Output = super::$name;
                 #[allow(clippy::wrong_self_convention)]
-                #[inline(always)] fn from_db(self) -> Self::Output { super::$name { $( $field: self.$field, )+ } }
+                #[inline(always)] fn from_db(self) -> Self::Output { super::$name { $( $field: self.[<get_$field>].into_db_type(), )+ } }
             }
         }
     };

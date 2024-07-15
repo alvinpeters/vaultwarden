@@ -1,6 +1,8 @@
+use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
 use std::error::Error as ErrorTrait;
 use std::future::Future;
+use chrono::NaiveDateTime;
 use deadpool::managed::{Manager, Metrics, RecycleResult};
 use diesel::expression::is_aggregate::No;
 use crate::config::Config;
@@ -59,6 +61,7 @@ pub(crate) enum NonDieselDbError {
     IndexAlreadyExists,
     SerializationFail,
     PkAlreadyExists,
+    OpProhibited,
     IndexMismatchError
 }
 
@@ -87,3 +90,36 @@ impl Display for NonDieselConnError {
 }
 
 impl ErrorTrait for NonDieselConnError {}
+
+pub(crate) trait FromDbType<T>: Sized {
+    fn from_db_type(value: T) -> Self;
+}
+
+pub(crate) trait IntoDbType<T>: Sized {
+    fn into_db_type(self) -> T;
+}
+
+/// Allows conversion to self. Useful for macros
+impl<T> FromDbType<T> for T where T: Any {
+    fn from_db_type(value: T) -> Self {
+        value
+    }
+}
+
+impl<T, U> IntoDbType<U> for T where U: FromDbType<T> {
+    fn into_db_type(self) -> U {
+        U::from_db_type(self)
+    }
+}
+
+impl FromDbType<chrono::NaiveDateTime> for bson::DateTime {
+    fn from_db_type(value: chrono::NaiveDateTime) -> Self {
+        bson::DateTime::from_chrono(value.and_utc())
+    }
+}
+
+impl FromDbType<bson::DateTime> for chrono::NaiveDateTime {
+    fn from_db_type(value: bson::DateTime) -> Self {
+        value.to_chrono().naive_utc()
+    }
+}
