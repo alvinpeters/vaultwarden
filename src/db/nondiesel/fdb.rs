@@ -213,6 +213,7 @@ macro_rules! fdb_table {
                 use ::foundationdb::{Transaction, RangeOption};
                 use ::foundationdb::tuple::Subspace;
                 use $crate::db::nondiesel::{NonDieselConnection, NonDieselDbError};
+                use $crate::db::nondiesel::types::{IntoModelType, IntoDbType};
                 use $crate::db::nondiesel::fdb::trx_helpers::*;
                 use $crate::api::EmptyResult;
 
@@ -257,72 +258,71 @@ macro_rules! fdb_table {
                     _subspace: Subspace,
                     _saved: bool,
                     _serialized_key_tuple: Vec<u8>,
-                    $( $attr_name: $attr_ty ),+
+                    $( $attr_name: Vec<u8> ),+
                 }
 
 
                 impl [<$table:camel Db>] {
                     ///
-                    pub fn new($( $attr_name: $attr_ty ),+) -> Self {
-                        let _subspace = key_subspace($( &$key_name ),+);
-                        let _serialized_key_tuple = bson::to_vec(&($( &$key_name ),+)).unwrap();
+                    pub fn new($( $attr_name: &$attr_ty ),+) -> Self {
+                        let _subspace = key_subspace($( $key_name ),+);
+                        let _serialized_key_tuple = bson::to_vec(&($( $key_name ),+)).unwrap();
                         Self {
                             _subspace,
                             _saved: false,
                             _serialized_key_tuple,
-                            $( $attr_name ),+
+                            $( $attr_name: $attr_name.into_db_type() ),+
                         }
                     }
 
                     pub async fn get(trx: &Transaction, $($key_name: &[<$key_name:camel Type>]),+) -> Result<Option<Self>, NonDieselDbError> {
+                        let key_tuple = bson::to_vec(&($( $key_name ),+)).unwrap();
                         let key_subspace = key_subspace($( $key_name ),+);
                         // TODO: Remove unwrap
                         let res = Self {
-                            $( $attr_name: bson::from_slice(
-                                trx.get(&key_subspace.pack(&(Col::[<$attr_name:camel>] as u16)), false)
-                                    .await
-                                    .unwrap() // TODO: Database error
-                                    .unwrap() // TODO: Means its missing, return Ok(None)
-                                    .as_ref()
-                                ).unwrap(), // TODO: Failed to deser
+                            $( $attr_name: trx.get(&key_subspace.pack(&(Col::[<$attr_name:camel>] as u16)), false)
+                                .await
+                                .unwrap() // TODO: Database error
+                                .unwrap() // TODO: Means its missing, return Ok(None)
+                                .to_vec(),
                             )+
                             _saved: true,
-                            _serialized_key_tuple: bson::to_vec(&($( $key_name ),+)).unwrap(),
+                            _serialized_key_tuple: key_tuple,
                             _subspace: key_subspace
                         };
                         Ok(Some(res))
                     }
 
-                    pub async fn set(&self, trx: Transaction) -> Result<(), NonDieselDbError> {
+                    /// Don't use if this model is fetched from the database. Use set_attributes instead.
+                    pub async fn set(&mut self, trx: Transaction) -> Result<&Self, NonDieselDbError> {
                         // TODO: Remove unwrap
-                        // Serialize all attributes
-                        $( let $attr_name = bson::to_vec(&self.$attr_name).unwrap(); )+
-                        // Primary keys
-                        let key_subspace = key_subspace($( &self.$key_name ),+);
-                        let ser_key_tuple = bson::to_vec(&($( &self.$key_name ),+)).unwrap();
                         $(
                         $($(
                         set_unique_index(
                             &trx,
                             u_index_col_subspace(Col::[<$unique_index_name:camel>]),
-                            &$unique_index_name,
-                            &key_subspace.pack(&(Col::[<$unique_index_name:camel>] as u16)),
-                            &ser_key_tuple
+                            &self.$unique_index_name,
+                            &self._subspace.pack(&(Col::[<$unique_index_name:camel>] as u16)),
+                            &self._serialized_key_tuple
                         ).await?;
                         )+)?
                         $($(
                         set_multi_index(
                             &trx,
                             m_index_col_subspace(Col::[<$multi_index_name:camel>]),
-                            &$multi_index_name,
-                            &key_subspace.pack(&(Col::[<$multi_index_name:camel>] as u16)),
-                            &ser_key_tuple
+                            &self.$multi_index_name,
+                            &self._subspace.pack(&(Col::[<$multi_index_name:camel>] as u16)),
+                            &self._serialized_key_tuple
                         ).await?;
                         )+)?
-
                         )?
-                        $( trx.set(&key_subspace.pack(&(Col::[<$attr_name:camel>] as u16)), &$attr_name); )+
-                        trx.commit().await.map(|_| ()).map_err(|_| NonDieselDbError::TrxCommitFail)
+                        $( trx.set(&self._subspace.pack(&(Col::[<$attr_name:camel>] as u16)), &self.$attr_name); )+
+                        if let Err(_err) = trx.commit().await {
+                            return Err(NonDieselDbError::TrxCommitFail);
+                        }
+                        self._saved = true;
+                        // return self so it can be reused in method chains
+                        Ok(self)
                     }
 
                     pub async fn delete(self, trx: Transaction) -> Result<(), NonDieselDbError> {
@@ -394,11 +394,12 @@ macro_rules! fdb_table {
                     }
 
                     $(
-                    pub async fn [<get_ $attr_name>](&self) -> &$attr_ty {
-                        &self.$attr_name
+                    pub async fn [<get_ $attr_name>](&self) -> $attr_ty {
+                        // TODO: Remove unwrap
+                        self.$attr_name.as_slice().into_model_type()
                     }
 
-                    pub async fn [<set_ $attr_name>](&self, trx: Transaction, $attr_name: &$attr_ty) ->  Result<(), NonDieselDbError> {
+                    pub async fn [<set_ $attr_name>](&mut self, trx: Transaction, $attr_name: &$attr_ty) ->  Result<&Self, NonDieselDbError> {
                         let col = Col::[<$attr_name:camel>];
                         // Setting a primary key is prohibited
                         if PK_COLS.contains(&col) {
@@ -409,7 +410,8 @@ macro_rules! fdb_table {
                         let ser = bson::to_vec($attr_name).unwrap();
                         trx.set(&key, &ser);
                         let _res = trx.commit().await.unwrap();
-                        Ok(())
+                        self.$attr_name = ser;
+                        Ok(self)
                     }
                     )+
                 }

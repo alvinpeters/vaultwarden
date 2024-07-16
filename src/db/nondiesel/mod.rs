@@ -5,11 +5,13 @@ use std::future::Future;
 use chrono::NaiveDateTime;
 use deadpool::managed::{Manager, Metrics, RecycleResult};
 use diesel::expression::is_aggregate::No;
+use serde::{Deserialize, Serialize};
 use crate::config::Config;
 use crate::Error;
 
 
 pub mod fdb;
+pub mod types;
 
 pub(crate) trait NonDieselConnection: Sized + Send {
     type Config: Send + Sync;
@@ -54,6 +56,14 @@ impl<C> Manager for NonDieselConnManager<C> where C: NonDieselConnection {
     }
 }
 
+// Perhaps we should start using thiserror
+
+pub(crate) enum TrxError {
+    TrxCommitFail,
+    DeserializeError,
+    SerializeError,
+}
+
 #[derive(Debug)]
 pub(crate) enum NonDieselDbError {
     TrxFail,
@@ -91,35 +101,11 @@ impl Display for NonDieselConnError {
 
 impl ErrorTrait for NonDieselConnError {}
 
-pub(crate) trait FromDbType<T>: Sized {
-    fn from_db_type(value: T) -> Self;
+
+pub(crate) trait TryFromModelType<T>: Sized {
+    fn try_from_model_type(value: T) -> Self;
 }
 
-pub(crate) trait IntoDbType<T>: Sized {
-    fn into_db_type(self) -> T;
-}
-
-/// Allows conversion to self. Useful for macros
-impl<T> FromDbType<T> for T where T: Any {
-    fn from_db_type(value: T) -> Self {
-        value
-    }
-}
-
-impl<T, U> IntoDbType<U> for T where U: FromDbType<T> {
-    fn into_db_type(self) -> U {
-        U::from_db_type(self)
-    }
-}
-
-impl FromDbType<chrono::NaiveDateTime> for bson::DateTime {
-    fn from_db_type(value: chrono::NaiveDateTime) -> Self {
-        bson::DateTime::from_chrono(value.and_utc())
-    }
-}
-
-impl FromDbType<bson::DateTime> for chrono::NaiveDateTime {
-    fn from_db_type(value: bson::DateTime) -> Self {
-        value.to_chrono().naive_utc()
-    }
+pub(crate) trait TryIntoModelType<T>: Sized {
+    fn try_into_model_type(self) -> T;
 }
