@@ -1,5 +1,5 @@
 use std::any::Any;
-use bson::DateTime;
+use bson::{Binary, DateTime};
 use chrono::NaiveDateTime;
 use rocket::data::N;
 use serde::{Deserialize, Serialize};

@@ -438,7 +438,7 @@ macro_rules! db_object {
         pub mod __postgresql_model { $( db_object! { @db postgresql |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
     };
 
-    ( @db_nd $db:ident | $( #[$attr:meta] )* | $name:ident | $( $( #[$field_attr:meta] )*   $vis:vis $field:ident : $typ:ty),+) => {
+    ( @db_nd $db:ident | $( #[$attr:meta] )* | $name:ident | $( $( #[$field_attr:meta] )* $vis:vis $field:ident : $typ:ty),+) => {
         paste::paste! {
             #[allow(unused)] use super::*;
             #[allow(unused)] use $crate::db::[<__ $db _schema>]::*;
@@ -447,13 +447,17 @@ macro_rules! db_object {
 
             impl [<$name Db>] {
                 #[allow(clippy::wrong_self_convention)]
-                #[inline(always)] pub fn to_db(x: &super::$name) -> Self { Self { $( $field: x.$field.clone(), )+ } }
+                #[inline(always)] pub fn to_db(x: &super::$name) -> Self {
+                    Self::new($( x.$field.into_compat_type() ),+)
+                }
             }
 
             impl $crate::db::FromDb for [<$name Db>] {
                 type Output = super::$name;
                 #[allow(clippy::wrong_self_convention)]
-                #[inline(always)] fn from_db(self) -> Self::Output { super::$name { $( $field: self.[<get_$field>].into_db_type(), )+ } }
+                #[inline(always)] fn from_db(self) -> Self::Output {
+                    super::$name { $( $field: self.[<get_$field>].into_compat_Type().into_model_type(), )+ }
+                }
             }
         }
     };

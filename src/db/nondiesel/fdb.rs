@@ -8,6 +8,10 @@ use once_cell::sync::Lazy;
 use crate::config::Config;
 use crate::db::nondiesel::{NonDieselConnection, NonDieselConnError, NonDieselDbError};
 
+pub(crate) const PROG_SUBSPACE: Lazy<Subspace> = Lazy::new(|| {
+    Subspace::from_bytes(b"vw_v1")
+});
+
 static FDB_NETWORK_CLIENT: Lazy<Mutex<Option<NetworkAutoStop>>> = Lazy::new(|| {
     // Safe as long as it gets dropped on shutdown
     // See these issues:
@@ -241,7 +245,7 @@ macro_rules! fdb_table {
                 )?
 
                 // Needed for primary key and index types
-                $( type [<$attr_name:camel Type>] = $attr_ty; )+
+                $( pub(super) type [<$attr_name:camel Type>] = $attr_ty; )+
 
                 #[repr(u8)]
                 #[derive(PartialEq)]
@@ -469,10 +473,23 @@ macro_rules! fdb_key_value {
 #[macro_export]
 macro_rules! fdb_relationship {
     (
-        $table_a:ident ( $key_a:ident ) <-> $table_b:ident ( $key_b:ident )
+        $relationship_name:ident { $table_a:ident ( $key_a:ident ) <-> $table_b:ident ( $key_b:ident ) }
     ) => {
-        paste! {
+        paste::paste! {
+            pub mod $relationship_name {
+                use ::foundationdb::tuple::Subspace;
 
+                use super::$table_a;
+                use super::$table_b;
+
+                pub struct [<$relationship_name:camel Db>] {
+                    _subspace: Subspace,
+                    _saved: bool,
+                    _serialized_key_tuple: Vec<u8>,
+                    [<$table_a _ $key_a>]: $table_a::[<$key_a:camel Type>],
+                    [<$table_b _ $key_b>]: $table_b::[<$key_b:camel Type>]
+                }
+            }
         }
     };
 }

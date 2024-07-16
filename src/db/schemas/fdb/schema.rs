@@ -1,7 +1,7 @@
-use crate::{fdb_table, fdb_key};
+use crate::{fdb_table, fdb_key, fdb_relationship};
 
 fdb_table! {
-    attachments (id) {
+    attachment (id) {
         id: String = 0,
         cipher_uuid: String = 1,
         file_name: String = 2,
@@ -29,7 +29,11 @@ fdb_table! {
     }
 }
 
-// TODO: cipher (uuid) <-> collection (uuid)
+fdb_relationship! {
+    collection_cipher {
+        collection (uuid) <-> cipher (uuid)
+    }
+}
 
 fdb_table! {
     collection (uuid) {
