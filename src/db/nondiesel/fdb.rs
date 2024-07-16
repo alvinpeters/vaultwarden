@@ -4,13 +4,12 @@ use foundationdb::{Database, Transaction};
 use foundationdb::api::NetworkAutoStop;
 use foundationdb::tuple::Subspace;
 use once_cell::sync::Lazy;
-
+use which::Path;
 use crate::config::Config;
-use crate::db::nondiesel::{NonDieselConnection, NonDieselConnError, NonDieselDbError};
+use crate::db::nondiesel::{NonDieselConfig, NonDieselConnection, NonDieselConnError, NonDieselDbError};
 
-pub(crate) const PROG_SUBSPACE: Lazy<Subspace> = Lazy::new(|| {
-    Subspace::from_bytes(b"vw_v1")
-});
+/// Subspace to hold current version of the schema. Will be useful for breaking updates.
+const SCHEMA_SUBSPACE: &[u8] = b"v1";
 
 static FDB_NETWORK_CLIENT: Lazy<Mutex<Option<NetworkAutoStop>>> = Lazy::new(|| {
     // Safe as long as it gets dropped on shutdown
@@ -22,15 +21,31 @@ static FDB_NETWORK_CLIENT: Lazy<Mutex<Option<NetworkAutoStop>>> = Lazy::new(|| {
 });
 
 pub(crate) struct FdbConnection {
-    database: Database
+    database: Database,
+    subspace: Subspace,
+}
+
+pub(crate) struct FdbConfig {
+    cluster_file: String,
+    main_subspace: String
+}
+
+impl NonDieselConfig for FdbConfig {
+    fn new_config(config: &Config) -> Self {
+        Self {
+            cluster_file: config.database_url(),
+            main_subspace: config.db_keyspace(),
+        }
+    }
 }
 
 impl NonDieselConnection for FdbConnection {
-    type Config = Config;
+    type Config = FdbConfig;
     type Transaction = Transaction;
 
     // Starts the network runner via triggering the lazy static. Must only be run once.
     fn start() -> Result<(), NonDieselConnError> {
+        println!("starting FoundationDB API network runner");
         let network_opt = FDB_NETWORK_CLIENT.lock()
             .map_err(|h| NonDieselConnError::StartFail)?;
         if network_opt.is_none() {
@@ -47,14 +62,16 @@ impl NonDieselConnection for FdbConnection {
         let Some(network) = network_opt.take() else {
             return Err(NonDieselConnError::StopFail)
         };
+        println!("stopped FoundationDB API network runner");
         Ok(drop(network))
     }
 
     async fn establish(config: &Self::Config) -> Result<Self, NonDieselConnError> {
-        let path = config.database_url();
-        let database = Database::new(Some(&path)).map_err(|_| NonDieselConnError::EstablishFail)?;
+        let database = Database::new(Some(&config.cluster_file)).map_err(|_| NonDieselConnError::EstablishFail)?;
+        let subspace = Subspace::from_bytes(config.main_subspace.as_bytes()).subspace(&SCHEMA_SUBSPACE);
         Ok(Self {
             database,
+            subspace
         })
     }
 
@@ -167,7 +184,7 @@ pub mod trx_helpers {
 #[macro_export]
 macro_rules! fdb_table {
     (
-        $table:ident $key:tt $( $( UNIQUE ( $( $unique_index_name:ident ),+ ) )? $( MULTI ( $( $multi_index_name:ident ),+ ) )? INDEX )? {
+        $table:ident $key:tt $( WITH $( UNIQUE ( $( $unique_index_name:ident ),+ ) )? $( MULTI ( $( $multi_index_name:ident ),+ ) )? INDEX )? {
             $( $attr_name:ident: $attr_ty:ty = $col_num:expr ),+
         }
 
@@ -217,7 +234,7 @@ macro_rules! fdb_table {
                 use ::foundationdb::{Transaction, RangeOption};
                 use ::foundationdb::tuple::Subspace;
                 use $crate::db::nondiesel::{NonDieselConnection, NonDieselDbError};
-                use $crate::db::nondiesel::types::{IntoModelType, IntoDbType};
+                use $crate::db::nondiesel::types::{IntoModelType, IntoDbType, IntoCompatType};
                 use $crate::db::nondiesel::fdb::trx_helpers::*;
                 use $crate::api::EmptyResult;
 
@@ -398,7 +415,7 @@ macro_rules! fdb_table {
                     }
 
                     $(
-                    pub async fn [<get_ $attr_name>](&self) -> $attr_ty {
+                    pub fn [<get_ $attr_name>](&self) -> $attr_ty {
                         // TODO: Remove unwrap
                         self.$attr_name.as_slice().into_model_type()
                     }
@@ -451,7 +468,6 @@ macro_rules! fdb_table {
                     )+
                 }
 
-
                 $( $extras )*
             }
         }
@@ -461,7 +477,33 @@ macro_rules! fdb_table {
 #[macro_export]
 macro_rules! fdb_key {
     ($name:ident -> $key_name:ident: $key_ty:ty) => {
+        paste::paste! {
+            pub mod $name {
+                use ::foundationdb::tuple::Subspace;
 
+                use $crate::db::nondiesel::types::{IntoModelType, IntoDbType, IntoCompatType};
+
+                pub struct [<$name:camel Db>] {
+                    _subspace: Subspace,
+                    $key_name: Vec<u8>
+                }
+
+                impl [<$name:camel Db>] {
+                    pub fn new($key_name: &$key_ty) -> Self {
+                        let $key_name = $key_name.into_db_type();
+                        let _subspace = Subspace::all();
+                        Self {
+                            _subspace,
+                            $key_name
+                        }
+                    }
+
+                    pub fn [<get_ $key_name>](&self) -> $key_ty {
+                        self.$key_name.as_slice().into_model_type()
+                    }
+                }
+            }
+        }
     };
 }
 
@@ -473,24 +515,75 @@ macro_rules! fdb_key_value {
 #[macro_export]
 macro_rules! fdb_relationship {
     (
-        $relationship_name:ident { $table_a:ident ( $key_a:ident ) <-> $table_b:ident ( $key_b:ident ) }
+        $relationship_name:ident { $table_a:ident ( $key_a:ident $( as $key_a_alias:ident )? ) <-> $table_b:ident ( $key_b:ident $( as $key_b_alias:ident )? ) }
     ) => {
         paste::paste! {
             pub mod $relationship_name {
                 use ::foundationdb::tuple::Subspace;
+
+                use $crate::db::nondiesel::types::{IntoModelType, IntoDbType, IntoCompatType};
 
                 use super::$table_a;
                 use super::$table_b;
 
                 pub struct [<$relationship_name:camel Db>] {
                     _subspace: Subspace,
-                    _saved: bool,
-                    _serialized_key_tuple: Vec<u8>,
-                    [<$table_a _ $key_a>]: $table_a::[<$key_a:camel Type>],
-                    [<$table_b _ $key_b>]: $table_b::[<$key_b:camel Type>]
+                    [<$table_a _ $key_a>]: Vec<u8>,
+                    [<$table_b _ $key_b>]: Vec<u8>
                 }
+
+                impl [<$relationship_name:camel Db>] {
+                    pub fn new([<$table_a _ $key_a>]: &$table_a::[<$key_a:camel Type>], [<$table_b _ $key_b>]: &$table_b::[<$key_b:camel Type>]) -> Self {
+                        let _subspace = Subspace::all();
+                        Self {
+                            _subspace,
+                            [<$table_a _ $key_a>]: [<$table_a _ $key_a>].into_db_type(),
+                            [<$table_b _ $key_b>]: [<$table_b _ $key_b>].into_db_type()
+                        }
+                    }
+
+                    pub fn [<get_ $table_a _ $key_a>](&self) -> $table_a::[<$key_a:camel Type>] {
+                        self.[<$table_a _ $key_a>].as_slice().into_model_type()
+                    }
+
+                    $(
+                    pub fn [<get_ $key_a_alias>](&self) -> $table_a::[<$key_a:camel Type>] {
+                        self.[<get_ $table_a _ $key_a>]()
+                    }
+                    )?
+
+                    pub fn [<get_ $table_b _ $key_b>](&self) -> $table_b::[<$key_b:camel Type>] {
+                        self.[<$table_b _ $key_b>].as_slice().into_model_type()
+                    }
+
+                    $(
+                    pub fn [<get_ $key_b_alias>](&self) -> $table_b::[<$key_b:camel Type>] {
+                        self.[<get_ $table_b _ $key_b>]()
+                    }
+                    )?
+                }
+
             }
         }
     };
 }
 
+#[macro_export]
+macro_rules! fdb_relationship_with_attr {
+    (
+        $relationship_name:ident ( $( $key_name:ident ),+ ) ( $table_a:ident ( $key_a:ident ) <-> $table_b:ident ( $key_b:ident ) ) $( WITH $( UNIQUE ( $( $unique_index_name:ident ),+ ) )? INDEX )? {
+            $( $attr_name:ident: $attr_ty:ty = $col_num:expr ),+
+        }
+    ) => {
+        paste::paste! {
+            fdb_table! {
+                $relationship_name ( $( $key_name ),+ ) $(WITH $( UNIQUE ( $( $unique_index_name ),+ ) )? INDEX )? {
+                    $( $attr_name: $attr_ty = $col_num ),+
+                }
+
+                use super::$table_a;
+                use super::$table_b;
+            }
+        }
+    };
+}

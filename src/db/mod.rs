@@ -272,10 +272,10 @@ impl DbConnType {
         // Fdb
         if url.ends_with(".cluster") {
             #[cfg(fdb)]
-            return Ok(DbConnType::sqlite);
+            return Ok(DbConnType::fdb);
 
             #[cfg(not(fdb))]
-            err!("`DATABASE_URL` looks like a SQLite URL, but 'sqlite' feature is not enabled")
+            err!("`DATABASE_URL` looks like a FoundationDB cluster file, but 'fdb' feature is not enabled")
         // Mysql
         } else if url.starts_with("mysql:") {
             #[cfg(mysql)]
@@ -323,9 +323,13 @@ impl DbConnType {
 
 #[macro_export]
 macro_rules! db_run {
-    // Same for all dbs
+    // Same for all dbs. Defaults to diesel-based databases
     ( $conn:ident: $body:block ) => {
-        db_run! { $conn: @nondiesel fdb { todo!() } @diesel sqlite, mysql, postgresql $body }
+        db_run! { $conn: @nondiesel fdb { unimplemented!() } @diesel sqlite, mysql, postgresql $body }
+    };
+
+    ( $conn:ident: @nondiesel $body_nd:block @diesel $body:block ) => {
+        db_run! { $conn: @nondiesel fdb $body_nd @diesel sqlite, mysql, postgresql $body }
     };
 
     ( @raw $conn:ident: $body:block ) => {
@@ -349,7 +353,7 @@ macro_rules! db_run {
                 $crate::db::DbConnInner::$db_nd($conn) => {
                     paste::paste! {
                         #[allow(unused)] use $crate::db::[<__ $db_nd _schema>]::{self as schema, *};
-                        //#[allow(unused)] use [<__ $db_nd _model>]::*;
+                        #[allow(unused)] use [<__ $db_nd _model>]::*;
                     }
 
                     tokio::task::block_in_place(move || { $body_nd }) // Run blocking can't be used due to the 'static limitation, use block_in_place instead
@@ -425,11 +429,13 @@ macro_rules! db_object {
             $(,)?
         }
     )+ ) => {
+        use crate::db::nondiesel::types::IntoCompatType;
+
         // Create the normal struct, without attributes
         $( pub struct $name { $( /*$( #[$field_attr] )**/ $vis $field : $typ, )+ } )+
 
-        //#[cfg(fdb)]
-        //pub mod __fdb_model        { $( db_object! { @db_nd fdb     |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
+        #[cfg(fdb)]
+        pub mod __fdb_model        { $( db_object! { @db_nd fdb     |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
         #[cfg(sqlite)]
         pub mod __sqlite_model     { $( db_object! { @db sqlite     |  $( #[$attr] )* | $name |  $( $( #[$field_attr] )* $field : $typ ),+ } )+ }
         #[cfg(mysql)]
@@ -442,13 +448,16 @@ macro_rules! db_object {
         paste::paste! {
             #[allow(unused)] use super::*;
             #[allow(unused)] use $crate::db::[<__ $db _schema>]::*;
+            #[allow(unused)] use $crate::db::[<__ $db _schema>]::[<$name:snake>]::*;
 
             // ModelDb with same attributes should be declared in the schema module.
 
             impl [<$name Db>] {
                 #[allow(clippy::wrong_self_convention)]
-                #[inline(always)] pub fn to_db(x: &super::$name) -> Self {
-                    Self::new($( x.$field.into_compat_type() ),+)
+                pub fn to_db(x: &super::$name) -> Self {
+                    // TODO: Get rid of clone
+                    $(let $field = x.$field.clone().into_compat_type();)+
+                    Self::new($( &$field ),+)
                 }
             }
 
@@ -456,7 +465,7 @@ macro_rules! db_object {
                 type Output = super::$name;
                 #[allow(clippy::wrong_self_convention)]
                 #[inline(always)] fn from_db(self) -> Self::Output {
-                    super::$name { $( $field: self.[<get_$field>].into_compat_Type().into_model_type(), )+ }
+                    super::$name { $( $field: self.[<get_$field>]().into_compat_type(), )+ }
                 }
             }
         }

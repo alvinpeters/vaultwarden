@@ -63,7 +63,10 @@ use crate::error::MapResult;
 impl Attachment {
     pub async fn save(&self, conn: &mut DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
+            @nondiesel fdb {
+                todo!() // TODO: FDB
+            }
+            @diesel sqlite, mysql {
                 match diesel::replace_into(attachments::table)
                     .values(AttachmentDb::to_db(self))
                     .execute(conn)
@@ -80,7 +83,7 @@ impl Attachment {
                     Err(e) => Err(e.into()),
                 }.map_res("Error saving attachment")
             }
-            postgresql {
+            @diesel postgresql {
                 let value = AttachmentDb::to_db(self);
                 diesel::insert_into(attachments::table)
                     .values(&value)
@@ -94,27 +97,32 @@ impl Attachment {
     }
 
     pub async fn delete(&self, conn: &mut DbConn) -> EmptyResult {
-        db_run! { conn: {
-            let _: () = crate::util::retry(
-                || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
-                10,
-            )
-            .map_res("Error deleting attachment")?;
-
-            let file_path = &self.get_file_path();
-
-            match std::fs::remove_file(file_path) {
-                // Ignore "file not found" errors. This can happen when the
-                // upstream caller has already cleaned up the file as part of
-                // its own error handling.
-                Err(e) if e.kind() == ErrorKind::NotFound => {
-                    debug!("File '{}' already deleted.", file_path);
-                    Ok(())
-                }
-                Err(e) => Err(e.into()),
-                _ => Ok(()),
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: FDB
             }
-        }}
+            @diesel {
+                let _: () = crate::util::retry(
+                    || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
+                    10,
+                )
+                .map_res("Error deleting attachment")?;
+
+                let file_path = &self.get_file_path();
+
+                match std::fs::remove_file(file_path) {
+                    // Ignore "file not found" errors. This can happen when the
+                    // upstream caller has already cleaned up the file as part of
+                    // its own error handling.
+                    Err(e) if e.kind() == ErrorKind::NotFound => {
+                        debug!("File '{}' already deleted.", file_path);
+                        Ok(())
+                    }
+                    Err(e) => Err(e.into()),
+                    _ => Ok(()),
+                }
+            }
+        }
     }
 
     pub async fn delete_all_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> EmptyResult {
@@ -125,94 +133,129 @@ impl Attachment {
     }
 
     pub async fn find_by_id(id: &str, conn: &mut DbConn) -> Option<Self> {
-        db_run! { conn: {
-            attachments::table
-                .filter(attachments::id.eq(id.to_lowercase()))
-                .first::<AttachmentDb>(conn)
-                .ok()
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: FDB
+            }
+            @diesel {
+                attachments::table
+                    .filter(attachments::id.eq(id.to_lowercase()))
+                    .first::<AttachmentDb>(conn)
+                    .ok()
+                    .from_db()
+            }
+        }
     }
 
     pub async fn find_by_cipher(cipher_uuid: &str, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            attachments::table
-                .filter(attachments::cipher_uuid.eq(cipher_uuid))
-                .load::<AttachmentDb>(conn)
-                .expect("Error loading attachments")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: FDB
+            }
+            @diesel {
+                attachments::table
+                    .filter(attachments::cipher_uuid.eq(cipher_uuid))
+                    .load::<AttachmentDb>(conn)
+                    .expect("Error loading attachments")
+                    .from_db()
+            }
+        }
     }
 
     pub async fn size_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
-        db_run! { conn: {
-            let result: Option<BigDecimal> = attachments::table
-                .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
-                .filter(ciphers::user_uuid.eq(user_uuid))
-                .select(diesel::dsl::sum(attachments::file_size))
-                .first(conn)
-                .expect("Error loading user attachment total size");
-
-            match result.map(|r| r.to_i64()) {
-                Some(Some(r)) => r,
-                Some(None) => i64::MAX,
-                None => 0
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: FDB
             }
-        }}
+            @diesel {
+                let result: Option<BigDecimal> = attachments::table
+                    .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+                    .filter(ciphers::user_uuid.eq(user_uuid))
+                    .select(diesel::dsl::sum(attachments::file_size))
+                    .first(conn)
+                    .expect("Error loading user attachment total size");
+
+                match result.map(|r| r.to_i64()) {
+                    Some(Some(r)) => r,
+                    Some(None) => i64::MAX,
+                    None => 0
+                }
+            }
+        }
     }
 
     pub async fn count_by_user(user_uuid: &str, conn: &mut DbConn) -> i64 {
-        db_run! { conn: {
-            attachments::table
-                .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
-                .filter(ciphers::user_uuid.eq(user_uuid))
-                .count()
-                .first(conn)
-                .unwrap_or(0)
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: FDB
+            }
+            @diesel {
+                attachments::table
+                    .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+                    .filter(ciphers::user_uuid.eq(user_uuid))
+                    .count()
+                    .first(conn)
+                    .unwrap_or(0)
+            }
+        }
     }
 
     pub async fn size_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
-        db_run! { conn: {
-            let result: Option<BigDecimal> = attachments::table
-                .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
-                .filter(ciphers::organization_uuid.eq(org_uuid))
-                .select(diesel::dsl::sum(attachments::file_size))
-                .first(conn)
-                .expect("Error loading user attachment total size");
-
-            match result.map(|r| r.to_i64()) {
-                Some(Some(r)) => r,
-                Some(None) => i64::MAX,
-                None => 0
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: FDB
             }
-        }}
+            @diesel {
+                let result: Option<BigDecimal> = attachments::table
+                    .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+                    .filter(ciphers::organization_uuid.eq(org_uuid))
+                    .select(diesel::dsl::sum(attachments::file_size))
+                    .first(conn)
+                    .expect("Error loading user attachment total size");
+
+                match result.map(|r| r.to_i64()) {
+                    Some(Some(r)) => r,
+                    Some(None) => i64::MAX,
+                    None => 0
+                }
+            }
+        }
     }
 
     pub async fn count_by_org(org_uuid: &str, conn: &mut DbConn) -> i64 {
-        db_run! { conn: {
-            attachments::table
-                .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
-                .filter(ciphers::organization_uuid.eq(org_uuid))
-                .count()
-                .first(conn)
-                .unwrap_or(0)
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: FDB
+            }
+            @diesel {
+                attachments::table
+                    .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+                    .filter(ciphers::organization_uuid.eq(org_uuid))
+                    .count()
+                    .first(conn)
+                    .unwrap_or(0)
+            }
+        }
     }
 
     // This will return all attachments linked to the user or org
     // There is no filtering done here if the user actually has access!
     // It is used to speed up the sync process, and the matching is done in a different part.
     pub async fn find_all_by_user_and_orgs(user_uuid: &str, org_uuids: &Vec<String>, conn: &mut DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            attachments::table
-                .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
-                .filter(ciphers::user_uuid.eq(user_uuid))
-                .or_filter(ciphers::organization_uuid.eq_any(org_uuids))
-                .select(attachments::all_columns)
-                .load::<AttachmentDb>(conn)
-                .expect("Error loading attachments")
-                .from_db()
-        }}
+        db_run! { conn:
+            @nondiesel {
+                todo!() // TODO: FDB
+            }
+            @diesel {
+                attachments::table
+                    .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+                    .filter(ciphers::user_uuid.eq(user_uuid))
+                    .or_filter(ciphers::organization_uuid.eq_any(org_uuids))
+                    .select(attachments::all_columns)
+                    .load::<AttachmentDb>(conn)
+                    .expect("Error loading attachments")
+                    .from_db()
+            }
+        }
     }
 }

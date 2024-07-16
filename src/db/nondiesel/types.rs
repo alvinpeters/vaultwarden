@@ -67,6 +67,22 @@ impl FromCompatType<DateTime> for NaiveDateTime {
     }
 }
 
+/// Converts a naive date time type into BSON-compatible date time with UTC assumed.
+impl FromCompatType<Option<NaiveDateTime>> for Option<DateTime> {
+    #[inline(always)]
+    fn from_compat_type(value: Option<NaiveDateTime>) -> Self {
+        value.map(|v| DateTime::from_chrono(v.and_utc()))
+    }
+}
+
+/// Converts BSON date time into a naive date time with UTC assumed.
+impl FromCompatType<Option<DateTime>> for Option<NaiveDateTime> {
+    #[inline(always)]
+    fn from_compat_type(value: Option<DateTime>) -> Self {
+        value.map(|v| v.to_chrono().naive_utc())
+    }
+}
+
 impl<T, U> IntoModelType<U> for T where U: FromDbType<T> {
     #[inline(always)]
     fn into_model_type(self) -> U {

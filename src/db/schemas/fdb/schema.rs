@@ -1,11 +1,11 @@
-use crate::{fdb_table, fdb_key, fdb_relationship};
+use crate::{fdb_table, fdb_key, fdb_relationship, fdb_relationship_with_attr};
 
 fdb_table! {
     attachment (id) {
         id: String = 0,
         cipher_uuid: String = 1,
         file_name: String = 2,
-        file_size: u64 = 3,
+        file_size: i64 = 3,
         akey: Option<String> = 4
     }
 }
@@ -16,7 +16,7 @@ fdb_table! {
         created_at: bson::DateTime = 1,
         updated_at: bson::DateTime = 2,
         user_uuid: Option<String> = 3,
-        organization_uuid: String = 4,
+        organization_uuid: Option<String> = 4,
         key: Option<String> = 5,
         atype: i32 = 6,
         name: String = 7,
@@ -47,15 +47,15 @@ fdb_table! {
 fdb_table! {
     device (uuid, user_uuid) {
         uuid: String = 0,
-        user_uuid: String = 1,
-        created_at: bson::DateTime = 2,
-        updated_at: bson::DateTime = 3,
+        created_at: bson::DateTime = 1,
+        updated_at: bson::DateTime = 2,
+        user_uuid: String = 3,
         name: String = 4,
         atype: i32 = 5,
         push_uuid: Option<String> = 6,
         push_token: Option<String> = 7,
         refresh_token: String = 8,
-        twofactor_remember: String = 9
+        twofactor_remember: Option<String> = 9
     }
 }
 
@@ -80,7 +80,11 @@ fdb_table! {
     }
 }
 
-// TODO: favorites: user (uuid) -> cipher (uuid)
+fdb_relationship! {
+    favorite {
+        user (uuid) <-> cipher (uuid)
+    }
+}
 
 fdb_table! {
     folder (uuid) {
@@ -92,16 +96,20 @@ fdb_table! {
     }
 }
 
-// TODO: cipher (uuid) <-> folder (uuid)
+fdb_relationship! {
+    folder_cipher {
+        folder (uuid) <-> cipher (uuid)
+    }
+}
 
-fdb_key!(invitations -> email: String);
+fdb_key!(invitation -> email: String);
 
 fdb_table! {
     org_policy (uuid) {
         uuid: String = 0,
         org_uuid: String = 1,
         atype: i32 = 2,
-        enable: bool = 3,
+        enabled: bool = 3,
         data: String = 4
     }
 }
@@ -112,7 +120,7 @@ fdb_table! {
         name: String = 1,
         billing_email: String = 2,
         private_key: Option<String> = 3,
-        public_key: String = 4
+        public_key: Option<String> = 4
     }
 }
 
@@ -126,22 +134,22 @@ fdb_table! {
         atype: i32 = 5,
         data: String = 6,
         akey: String = 7,
-        password_hash: Option<bson::Binary> = 8,
-        password_salt: Option<bson::Binary> = 9,
+        password_hash: Option<Vec<u8>> = 8,
+        password_salt: Option<Vec<u8>> = 9,
         password_iter: Option<i32> = 10,
         max_access_count: Option<i32> = 11,
         access_count: i32 = 12,
         creation_date: bson::DateTime = 13,
         revision_date: bson::DateTime = 14,
         expiration_date: Option<bson::DateTime> = 15,
-        deletion_Date: bson::DateTime = 16,
+        deletion_date: bson::DateTime = 16,
         disabled: bool = 17,
         hide_email: Option<bool> = 18
     }
 }
 
 fdb_table! {
-    twofactor (uuid) {
+    two_factor (uuid) {
         uuid: String = 0,
         user_uuid: String = 1,
         atype: i32 = 2,
@@ -152,7 +160,7 @@ fdb_table! {
 }
 
 fdb_table! {
-    twofactor_incomplete (user_uuid, device_uuid) {
+    two_factor_incomplete (user_uuid, device_uuid) {
         user_uuid: String = 0,
         device_uuid: String = 1,
         device_name: String = 2,
@@ -162,7 +170,7 @@ fdb_table! {
 }
 
 fdb_table! {
-    user (uuid) UNIQUE (email) INDEX {
+    user (uuid) WITH UNIQUE (email) INDEX {
         uuid: String = 0,
         enabled: bool = 1,
         created_at: bson::DateTime = 2,
@@ -174,14 +182,14 @@ fdb_table! {
         email_new: Option<String> = 8,
         email_new_token: Option<String> = 9,
         name: String = 10,
-        password_hash: bson::Binary = 11,
-        salt: bson::Binary = 12,
+        password_hash: Vec<u8> = 11,
+        salt: Vec<u8> = 12,
         password_iterations: i32 = 13,
         password_hint: Option<String> = 14,
         akey: String = 15,
         private_key: Option<String> = 16,
         public_key: Option<String> = 17,
-        totp_secret: Option<String> = 18,
+        _totp_secret: Option<String> = 18,
         totp_recover: Option<String> = 19,
         security_stamp: String = 20,
         stamp_exception: Option<String> = 21,
@@ -197,12 +205,58 @@ fdb_table! {
     }
 }
 
-// fdb_table! {
-//     users_collections
-// }
+fdb_relationship_with_attr! {
+    collection_user (user_uuid, collection_uuid) (user (uuid) <-> collection (uuid)) {
+        user_uuid: String = 0,
+        collection_uuid: String = 1,
+        read_only: bool = 2,
+        hide_passwords: bool = 3
+    }
+}
+
+fdb_relationship_with_attr! {
+    user_organization (user_uuid, org_uuid) (user (uuid) <-> organization (uuid)) WITH UNIQUE (uuid) INDEX {
+        uuid: String = 0,
+        user_uuid: String = 1,
+        org_uuid: String = 2,
+        access_all: bool = 3,
+        akey: String = 4,
+        status: i32 = 5,
+        atype: i32 = 6,
+        reset_password_key: Option<String> = 7,
+        external_id: Option<String> = 8
+    }
+}
 
 fdb_table! {
-    group (uuid, name) UNIQUE (organizations_uuid) INDEX {
+    organization_api_key (uuid, org_uuid) WITH MULTI (org_uuid) INDEX {
+        uuid: String = 0,
+        org_uuid: String = 1,
+        atype: i32 = 2,
+        api_key: String = 3,
+        revision_date: bson::DateTime = 4
+    }
+}
+
+fdb_table! {
+    emergency_access (uuid) {
+        uuid: String = 0,
+        grantor_uuid: String = 1,
+        grantee_uuid: Option<String> = 2,
+        email: Option<String> = 3,
+        key_encrypted: Option<String> = 4,
+        atype: i32 = 5,
+        status: i32 = 6,
+        wait_time_days: i32 = 7,
+        recovery_initiated_at: Option<bson::DateTime> = 8,
+        last_notification_at: Option<bson::DateTime> = 9,
+        updated_at: bson::DateTime = 10,
+        created_at: bson::DateTime = 11
+    }
+}
+
+fdb_table! {
+    group (uuid) {
         uuid: String = 0,
         organizations_uuid: String = 1,
         name: String = 2,
@@ -213,157 +267,37 @@ fdb_table! {
     }
 }
 
+fdb_relationship! {
+    group_user {
+        group (uuid as groups_uuid) <-> user_organization (uuid as users_organizations_uuid)
+    }
+}
 
+fdb_relationship_with_attr! {
+    collection_group (collections_uuid, groups_uuid) (collection (uuid) <-> group (uuid)) {
+        collections_uuid: String = 0,
+        groups_uuid: String = 1,
+        read_only: bool = 2,
+        hide_passwords: bool = 3
+    }
+}
 
-// PostgreSQL schema for reference below
-// table! {
-//     users_collections (user_uuid, collection_uuid) {
-//         user_uuid -> Text,
-//         collection_uuid -> Text,
-//         read_only -> Bool,
-//         hide_passwords -> Bool,
-//     }
-// }
-//
-// table! {
-//     users_organizations (uuid) {
-//         uuid -> Text,
-//         user_uuid -> Text,
-//         org_uuid -> Text,
-//         access_all -> Bool,
-//         akey -> Text,
-//         status -> Integer,
-//         atype -> Integer,
-//         reset_password_key -> Nullable<Text>,
-//         external_id -> Nullable<Text>,
-//     }
-// }
-//
-// table! {
-//     organization_api_key (uuid, org_uuid) {
-//         uuid -> Text,
-//         org_uuid -> Text,
-//         atype -> Integer,
-//         api_key -> Text,
-//         revision_date -> Timestamp,
-//     }
-// }
-//
-// table! {
-//     emergency_access (uuid) {
-//         uuid -> Text,
-//         grantor_uuid -> Text,
-//         grantee_uuid -> Nullable<Text>,
-//         email -> Nullable<Text>,
-//         key_encrypted -> Nullable<Text>,
-//         atype -> Integer,
-//         status -> Integer,
-//         wait_time_days -> Integer,
-//         recovery_initiated_at -> Nullable<Timestamp>,
-//         last_notification_at -> Nullable<Timestamp>,
-//         updated_at -> Timestamp,
-//         created_at -> Timestamp,
-//     }
-// }
-//
-// table! {
-//     groups (uuid) {
-//         uuid -> Text,
-//         organizations_uuid -> Text,
-//         name -> Text,
-//         access_all -> Bool,
-//         external_id -> Nullable<Text>,
-//         creation_date -> Timestamp,
-//         revision_date -> Timestamp,
-//     }
-// }
-//
-// table! {
-//     groups_users (groups_uuid, users_organizations_uuid) {
-//         groups_uuid -> Text,
-//         users_organizations_uuid -> Text,
-//     }
-// }
-//
-// table! {
-//     collections_groups (collections_uuid, groups_uuid) {
-//         collections_uuid -> Text,
-//         groups_uuid -> Text,
-//         read_only -> Bool,
-//         hide_passwords -> Bool,
-//     }
-// }
-//
-// table! {
-//     auth_requests  (uuid) {
-//         uuid -> Text,
-//         user_uuid -> Text,
-//         organization_uuid -> Nullable<Text>,
-//         request_device_identifier -> Text,
-//         device_type -> Integer,
-//         request_ip -> Text,
-//         response_device_id -> Nullable<Text>,
-//         access_code -> Text,
-//         public_key -> Text,
-//         enc_key -> Nullable<Text>,
-//         master_password_hash -> Nullable<Text>,
-//         approved -> Nullable<Bool>,
-//         creation_date -> Timestamp,
-//         response_date -> Nullable<Timestamp>,
-//         authentication_date -> Nullable<Timestamp>,
-//     }
-// }
-//
-// joinable!(attachments -> ciphers (cipher_uuid));
-// joinable!(ciphers -> organizations (organization_uuid));
-// joinable!(ciphers -> users (user_uuid));
-// joinable!(ciphers_collections -> ciphers (cipher_uuid));
-// joinable!(ciphers_collections -> collections (collection_uuid));
-// joinable!(collections -> organizations (org_uuid));
-// joinable!(devices -> users (user_uuid));
-// joinable!(folders -> users (user_uuid));
-// joinable!(folders_ciphers -> ciphers (cipher_uuid));
-// joinable!(folders_ciphers -> folders (folder_uuid));
-// joinable!(org_policies -> organizations (org_uuid));
-// joinable!(sends -> organizations (organization_uuid));
-// joinable!(sends -> users (user_uuid));
-// joinable!(twofactor -> users (user_uuid));
-// joinable!(users_collections -> collections (collection_uuid));
-// joinable!(users_collections -> users (user_uuid));
-// joinable!(users_organizations -> organizations (org_uuid));
-// joinable!(users_organizations -> users (user_uuid));
-// joinable!(users_organizations -> ciphers (org_uuid));
-// joinable!(organization_api_key -> organizations (org_uuid));
-// joinable!(emergency_access -> users (grantor_uuid));
-// joinable!(groups -> organizations (organizations_uuid));
-// joinable!(groups_users -> users_organizations (users_organizations_uuid));
-// joinable!(groups_users -> groups (groups_uuid));
-// joinable!(collections_groups -> collections (collections_uuid));
-// joinable!(collections_groups -> groups (groups_uuid));
-// joinable!(event -> users_organizations (uuid));
-// joinable!(auth_requests -> users (user_uuid));
-//
-// allow_tables_to_appear_in_same_query!(
-//     attachments,
-//     ciphers,
-//     ciphers_collections,
-//     collections,
-//     devices,
-//     folders,
-//     folders_ciphers,
-//     invitations,
-//     org_policies,
-//     organizations,
-//     sends,
-//     twofactor,
-//     users,
-//     users_collections,
-//     users_organizations,
-//     organization_api_key,
-//     emergency_access,
-//     groups,
-//     groups_users,
-//     collections_groups,
-//     event,
-//     auth_requests,
-// );
+fdb_table! {
+    auth_request (uuid) {
+        uuid: String = 0,
+        user_uuid: String = 1,
+        organization_uuid: Option<String> = 2,
+        request_device_identifier: String = 3,
+        device_type: i32 = 4,
+        request_ip: String = 5,
+        response_device_id: Option<String> = 6,
+        access_code: String = 7,
+        public_key: String = 8,
+        enc_key: Option<String> = 9,
+        master_password_hash: Option<String> = 10,
+        approved: Option<bool> = 11,
+        creation_date: bson::DateTime = 12,
+        response_date: Option<bson::DateTime> = 13,
+        authentication_date: Option<bson::DateTime> = 14
+    }
+}

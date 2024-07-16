@@ -579,6 +579,9 @@ make_config! {
         /// Log level
         log_level:              String, false,  def,    "Info".to_string();
 
+        /// Keyspace/subspace string for key-value stores. Only used for FoundationDB for now.
+        db_keyspace:            String, false,  def,    "vw".to_string();
+
         /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using vaultwarden on some exotic filesystems,
         /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
         enable_db_wal:          bool,   false,  def,    true;
@@ -708,12 +711,17 @@ make_config! {
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     // Validate connection URL is valid and DB feature is enabled
     let url = &cfg.database_url;
-    if DbConnType::from_url(url)? == DbConnType::sqlite && url.contains('/') {
+    let db_type = DbConnType::from_url(url)?;
+    if [DbConnType::sqlite, DbConnType::fdb].contains(&db_type) && url.contains('/') {
         let path = std::path::Path::new(&url);
         if let Some(parent) = path.parent() {
             if !parent.is_dir() {
                 err!(format!("SQLite database directory `{}` does not exist or is not a directory", parent.display()));
             }
+        }
+        // FoundationDB cluster file must exist
+        if db_type == DbConnType::fdb && !path.is_file() {
+            err!(format!("FoundationDB cluster file `{}` does not exist", path.display()));
         }
     }
 

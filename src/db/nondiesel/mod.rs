@@ -13,8 +13,12 @@ use crate::Error;
 pub mod fdb;
 pub mod types;
 
+pub(crate) trait NonDieselConfig: Send + Sync {
+    fn new_config(config: &Config) -> Self;
+}
+
 pub(crate) trait NonDieselConnection: Sized + Send {
-    type Config: Send + Sync;
+    type Config: NonDieselConfig;
     type Transaction;
 
     fn start() -> Result<(), NonDieselConnError>;
@@ -32,8 +36,10 @@ pub(crate) struct NonDieselConnManager<C> where C: NonDieselConnection {
 
 impl<C> NonDieselConnManager<C> where C: NonDieselConnection {
     pub(crate) fn new(config: &Config) -> Result<Self, Error> {
-        C::start();
-        todo!();
+        C::start()?;
+        Ok(Self {
+            db_config: C::Config::new_config(config)
+        })
     }
 }
 
