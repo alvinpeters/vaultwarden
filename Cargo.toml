@@ -13,22 +13,46 @@ publish = false
 build = "build.rs"
 
 [features]
-# default = ["sqlite"]
+default = ["sqlite", "postgresql", "sqlite", "legacy_db", "new_db"]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
+
+# New database feature flag
+new_db = ["deadpool"]
+
+# New database backends
+new_db_fdb = ["new_db", "foundationdb"]
+# This will take 20 million years to compile
+new_db_rdb = ["new_db", "rocksdb"]
+# Not actually async at the moment. Might have to make do.
+new_db_sqlite = ["new_db", "new_db_diesel", "diesel-async/sqlite"]
+new_db_mysql = ["new_db", "new_db_diesel", "diesel-async/mysql"]
+new_db_pgsql = ["new_db", "new_db_diesel", "diesel-async/postgres"]
+
+new_db_diesel = ["new_db", "diesel", "diesel-async"]
+
+# Legacy database feature. Keep enabled to keep successful compile
+legacy_db = ["diesel", "diesel_migrations", "diesel/r2d2"]
+
 enable_syslog = []
-mysql = ["diesel/mysql", "diesel_migrations/mysql"]
-postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
-sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys"]
+
+# Legacy database backends
+mysql = ["diesel/mysql", "diesel_migrations/mysql", "legacy_db"]
+postgresql = ["diesel/postgres", "diesel_migrations/postgres", "legacy_db"]
+sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "libsqlite3-sys", "legacy_db"]
+
+# This is a development dependency, and should only be used during development!
+# It enables the usage of the diesel_logger crate, which is able to output the generated queries.
+# You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
+# if you want to turn off the logging for a specific run.
+query_logger = ["diesel_logger", "legacy_db"]
+
+
+
 # Enable to use a vendored and statically linked openssl
 vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
 enable_mimalloc = ["mimalloc"]
-# This is a development dependency, and should only be used during development!
-# It enables the usage of the diesel_logger crate, which is able to output the generated queries.
-# You also need to set an env variable `QUERY_LOGGER=1` to fully activate this so you do not have to re-compile
-# if you want to turn off the logging for a specific run.
-query_logger = ["diesel_logger"]
 
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
@@ -73,9 +97,20 @@ tokio = { version = "1.39.1", features = ["rt-multi-thread", "fs", "io-util", "p
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
 
+# New database pool manager
+deadpool = { version = "0.12.1", features = ["managed"], optional = true }
+
+# New database backends that don't use diesel
+# Distributed key-value store, requires FoundationDB client installed in the system
+foundationdb = { version = "0.9.0", features = ["fdb-7_1", "embedded-fdb-include"], optional = true }
+# Embedded key-value store
+rocksdb = { version = "0.22.0", optional = true }
+
+
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.2.2", features = ["chrono", "r2d2", "numeric"] }
-diesel_migrations = "2.2.0"
+diesel = { version = "2.2.2", features = ["chrono", "numeric"], optional = true }
+diesel-async = { version = "0.5.0", features = ["deadpool"], optional = true }
+diesel_migrations = { version = "2.2.0", optional = true }
 diesel_logger = { version = "0.3.0", optional = true }
 
 # Bundled/Static SQLite

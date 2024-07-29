@@ -20,8 +20,10 @@ extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate log;
+#[cfg(feature = "legacy_db")]
 #[macro_use]
 extern crate diesel;
+#[cfg(feature = "legacy_db")]
 #[macro_use]
 extern crate diesel_migrations;
 
@@ -46,8 +48,12 @@ mod api;
 mod auth;
 mod config;
 mod crypto;
+#[cfg(feature = "legacy_db")]
 #[macro_use]
 mod db;
+#[cfg(feature = "new_db")]
+#[warn(unused)]
+mod new_db;
 mod http_client;
 mod mail;
 mod ratelimit;
