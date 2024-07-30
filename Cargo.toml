@@ -13,16 +13,17 @@ publish = false
 build = "build.rs"
 
 [features]
-default = ["sqlite", "postgresql", "sqlite", "legacy_db", "new_db"]
+default = ["sqlite", "postgresql", "sqlite", "legacy_db", "new_db", "fdb"]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 
 # New database feature flag
-new_db = ["deadpool"]
+# Including thiserror here for now. Perhaps, we can use this as a global error implementation instead?
+new_db = ["deadpool", "thiserror"]
 
 # New database backends
-new_db_fdb = ["new_db", "foundationdb"]
+fdb = ["new_db", "foundationdb"]
 # This will take 20 million years to compile
-new_db_rdb = ["new_db", "rocksdb"]
+rdb = ["new_db", "rocksdb"]
 # Not actually async at the moment. Might have to make do.
 new_db_sqlite = ["new_db", "new_db_diesel", "diesel-async/sqlite"]
 new_db_mysql = ["new_db", "new_db_diesel", "diesel-async/mysql"]
@@ -99,6 +100,9 @@ serde_json = "1.0.120"
 
 # New database pool manager
 deadpool = { version = "0.12.1", features = ["managed"], optional = true }
+
+# Database error helper, might work on implementing it everywhere else to reduce macro usage.
+thiserror = { version = "1.0.63", optional = true }
 
 # New database backends that don't use diesel
 # Distributed key-value store, requires FoundationDB client installed in the system
@@ -235,7 +239,8 @@ codegen-units = 16
 # Linting config
 [lints.rust]
 # Forbid
-unsafe_code = "forbid"
+# Had to allow FoundationDB unsafe boot function
+unsafe_code = { level = "deny", priority = -1 }
 non_ascii_idents = "forbid"
 
 # Deny

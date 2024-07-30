@@ -3,6 +3,7 @@ use std::process::Command;
 
 fn main() {
     // This allow using #[cfg(sqlite)] instead of #[cfg(feature = "sqlite")], which helps when trying to add them through macros
+    // Old database
     #[cfg(feature = "sqlite")]
     println!("cargo:rustc-cfg=sqlite");
     #[cfg(feature = "mysql")]
@@ -11,6 +12,12 @@ fn main() {
     println!("cargo:rustc-cfg=postgresql");
     #[cfg(feature = "query_logger")]
     println!("cargo:rustc-cfg=query_logger");
+
+    // New database
+    #[cfg(feature = "fdb")]
+    println!("cargo:rustc-cfg=fdb");
+    #[cfg(feature = "rdb")]
+    println!("cargo:rustc-cfg=rdb");
 
     #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql")))]
     compile_error!(

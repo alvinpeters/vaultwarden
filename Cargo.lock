@@ -4594,6 +4594,7 @@ dependencies = [
  "serde",
  "serde_json",
  "syslog",
+ "thiserror",
  "time",
  "tokio",
  "totp-lite",
