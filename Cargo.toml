@@ -21,13 +21,15 @@ default = ["sqlite", "postgresql", "sqlite", "legacy_db", "new_db", "fdb"]
 new_db = ["deadpool", "thiserror"]
 
 # New database backends
-fdb = ["new_db", "foundationdb"]
+fdb = ["new_db", "foundationdb", "new_db_kv_store"]
 # This will take 20 million years to compile
-rdb = ["new_db", "rocksdb"]
+rdb = ["new_db", "rocksdb", "new_db_kv_store"]
 # Not actually async at the moment. Might have to make do.
 new_db_sqlite = ["new_db", "new_db_diesel", "diesel-async/sqlite"]
 new_db_mysql = ["new_db", "new_db_diesel", "diesel-async/mysql"]
 new_db_pgsql = ["new_db", "new_db_diesel", "diesel-async/postgres"]
+
+new_db_kv_store = ["rkyv"]
 
 new_db_diesel = ["new_db", "diesel", "diesel-async"]
 
@@ -110,6 +112,8 @@ foundationdb = { version = "0.9.0", features = ["fdb-7_1", "embedded-fdb-include
 # Embedded key-value store
 rocksdb = { version = "0.22.0", optional = true }
 
+# Zero-copy deserialization (Need big-endian integers due to lexicographical key sorting)
+rkyv = { version = "0.7.44", features = ["archive_be", "validation"], optional = true }
 
 # A safe, extensible ORM and Query builder
 diesel = { version = "2.2.2", features = ["chrono", "numeric"], optional = true }

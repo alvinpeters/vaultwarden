@@ -6,6 +6,8 @@ use foundationdb::tuple::Subspace;
 use crate::new_db::custom_backends::{DbConnection, DbTransaction};
 use crate::new_db::error::{DbConnError, TransactionError};
 
+
+
 pub struct FdbConnection {
     database: Database,
     subspace: Subspace,
@@ -21,9 +23,18 @@ fn start() {
 impl DbConnection for FdbConnection {
     type Transaction = FdbTransaction;
 
-    fn establish() -> Result<Self, DbConnError> {
+    fn start() -> Result<(), DbConnError> {
         todo!()
     }
+
+    fn stop() -> Result<(), DbConnError> {
+        todo!()
+    }
+
+    fn establish(connection_str: &str) -> Result<Self, DbConnError> {
+        todo!()
+    }
+
 
     async fn transact<F, Fut, TrxErr, T>(&self, f: F) -> Result<T, TransactionError>
     where

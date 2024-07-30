@@ -7,7 +7,12 @@ pub mod fdb;
 pub trait DbConnection: Sized {
     type Transaction: DbTransaction;
 
-    fn establish() -> Result<Self, DbConnError>;
+    /// Perform any boot-up actions. Usually not needed and will do nothing.
+    fn start() -> Result<(), DbConnError> { Ok(()) }
+    /// Perform any shutdown actions. Usually not needed and will do nothing.
+    fn stop() -> Result<(), DbConnError> { Ok(()) }
+
+    fn establish(connection_str: &str) -> Result<Self, DbConnError>;
 
     async fn transact<F, Fut, TrxErr, T>(&self, f: F) -> Result<T, TransactionError>
     where
