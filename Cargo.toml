@@ -13,7 +13,7 @@ publish = false
 build = "build.rs"
 
 [features]
-default = ["sqlite", "postgresql", "sqlite", "legacy_db", "new_db", "fdb"]
+default = ["sqlite", "postgresql", "mysql", "legacy_db", "new_db", "fdb", "new_db_sqlite", "new_db_mysql", "new_db_pgsql", "rdb"]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 
 # New database feature flag
@@ -110,7 +110,7 @@ thiserror = { version = "1.0.63", optional = true }
 # Distributed key-value store, requires FoundationDB client installed in the system
 foundationdb = { version = "0.9.0", features = ["fdb-7_1", "embedded-fdb-include"], optional = true }
 # Embedded key-value store
-rocksdb = { version = "0.22.0", optional = true }
+rocksdb = { version = "0.22.0", features = ["multi-threaded-cf"], optional = true }
 
 # Zero-copy deserialization (Need big-endian integers due to lexicographical key sorting)
 rkyv = { version = "0.7.44", features = ["archive_be", "validation"], optional = true }

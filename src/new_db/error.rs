@@ -1,10 +1,23 @@
 use std::fmt::{Display, Formatter};
+#[cfg(fdb)]
+use foundationdb::FdbBindingError;
+use foundationdb::FdbError;
 use thiserror::Error;
+use crate::new_db::DbConnType;
 
 #[derive(Error, Debug)]
 pub enum DbConnError {
+    #[error("c")]
+    DbDisabled(DbConnType, String),
     #[error("couldn't establish connection with this string: {0}")]
-    EstablishFail(String)
+    EstablishFail(String),
+    #[error("failed to start: {0}")]
+    StartError(String),
+    #[error("failed to stop: {0}")]
+    StopError(String),
+    #[cfg(fdb)]
+    #[error("other FoundationDB error: {0}")]
+    FdbError(#[from] FdbError)
 }
 
 #[derive(Error, Debug)]
@@ -13,7 +26,7 @@ pub enum TransactionError {
     SerializationError(String),
     #[cfg(fdb)]
     #[error("FoundationDB transaction failed: {0}")]
-    FdbTrxFailed(String),
+    FdbTrxFailed(#[from] FdbBindingError),
 }
 
 #[derive(Error, Debug)]
