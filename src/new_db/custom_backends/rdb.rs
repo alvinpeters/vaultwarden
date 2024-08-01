@@ -2,8 +2,9 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
+use deadpool::managed::Pool;
 use rocksdb::{BoundColumnFamily, ColumnFamily, DB, DBCommon, DBPinnableSlice, DBWithThreadMode, ErrorKind, MultiThreaded, OptimisticTransactionDB, Transaction};
-use crate::new_db::custom_backends::{DbConnection, KvKeyspace, KvTransaction};
+use crate::new_db::custom_backends::{DbConnection, KvKeyspace, KvTransaction, SoloManager};
 use crate::new_db::error::{DbConnError, TransactionError};
 use crate::new_db::SCHEMA_VERSION;
 
@@ -25,6 +26,7 @@ pub struct RdbTransaction<'db> {
 }
 
 impl DbConnection for RdbConnection {
+    type ConnectionPool = Pool<SoloManager<Self>>;
     type Config = RdbConfig;
     type Transaction<'db> = RdbTransaction<'db>;
 

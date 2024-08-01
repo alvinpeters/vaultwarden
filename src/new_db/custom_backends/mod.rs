@@ -10,6 +10,7 @@ pub mod fdb;
 pub mod rdb;
 
 pub trait DbConnection: Sized + Send + Sync {
+    type ConnectionPool;
     type Config;
     type Transaction<'db>: KvTransaction<'db>;
 
@@ -83,7 +84,7 @@ pub trait KvKeyspace: From<Vec<u8>> + Sized {
     fn range(&self) -> (Self::Key, Self::Key);
 }
 
-pub(crate) struct SoloManager<T> where T: DbConnection {
+pub struct SoloManager<T> where T: DbConnection {
     conn_arc: Arc<T>,
 }
 

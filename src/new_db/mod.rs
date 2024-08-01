@@ -8,6 +8,7 @@ use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 use diesel_async::sync_connection_wrapper::SyncConnectionWrapper;
 use crate::new_db::custom_backends::{DbConnection, SoloManager};
 use crate::new_db::custom_backends::fdb::FdbConnection;
+use crate::new_db::custom_backends::rdb::RdbConnection;
 use crate::new_db::error::DbConnError;
 
 const SCHEMA_VERSION: &[u8] = b"v2";
@@ -95,12 +96,13 @@ impl DbConnType {
 }
 
 pub enum DbPool {
-    FDB(Pool<SoloManager<FdbConnection>>),
-    RDB,
+    FDB(<FdbConnection as DbConnection>::ConnectionPool),
+    RDB(<RdbConnection as DbConnection>::ConnectionPool),
     MySQL(Pool<AsyncDieselConnectionManager<AsyncMysqlConnection>>),
     PGSQL(Pool<AsyncDieselConnectionManager<AsyncPgConnection>>),
     SQLite(Pool<AsyncDieselConnectionManager<SyncConnectionWrapper<SqliteConnection>>>)
 }
+
 
 
 

@@ -2,13 +2,14 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
+use deadpool::managed::Pool;
 use foundationdb::{Database, DatabaseTransact, FdbBindingError, RetryableTransaction, Transaction, TransactError, FdbError, RangeOption};
 use foundationdb::api::NetworkAutoStop;
 use foundationdb::future::{FdbSlice, FdbValue};
 use foundationdb::options::{DatabaseOption, TransactionOption};
 use foundationdb::tuple::Subspace;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
-use crate::new_db::custom_backends::{DbConnection, KvKeyspace, KvTransaction};
+use crate::new_db::custom_backends::{DbConnection, KvKeyspace, KvTransaction, SoloManager};
 use crate::new_db::error::{DbConnError, TransactionError};
 
 #[allow(unsafe_code)]
@@ -35,6 +36,7 @@ pub struct FdbConfig {
 }
 
 impl DbConnection for FdbConnection {
+    type ConnectionPool = Pool<SoloManager<Self>>;
     type Config = FdbConfig;
     type Transaction<'db> = FdbTransaction;
 
