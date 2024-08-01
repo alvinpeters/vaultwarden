@@ -31,8 +31,8 @@ pub trait DbConnection: Sized + Send + Sync {
 pub trait KvTransaction<'db> {
     type Keyspace: KvKeyspace;
     type ClosureError;
-    type KeyRef: ?Sized + Send;
-    type KeyValue;
+    type KeyRef: ?Sized + Send + PartialOrd;
+    type KeyValue: KeyValue;
     type Key: AsRef<Self::ValueRef>;
     type ValueRef: ?Sized + Send;
     type Value: AsRef<Self::ValueRef>;
@@ -64,7 +64,7 @@ pub trait KvTransaction<'db> {
 
 pub trait KvKeyspace: From<Vec<u8>> + Sized {
     // will eventually be merged
-    type KeyRef: ?Sized + Send;
+    type KeyRef: ?Sized + Send + PartialOrd;
     type Key: AsRef<Self::KeyRef>;
 
     fn all() -> Self;
@@ -82,6 +82,12 @@ pub trait KvKeyspace: From<Vec<u8>> + Sized {
     fn unpack<B: AsRef<Self::KeyRef> + ?Sized>(&self, key: &B) -> Option<Self::Key>;
 
     fn range(&self) -> (Self::Key, Self::Key);
+}
+
+pub trait KeyValue {
+    fn as_key(&self) -> &[u8];
+    fn as_value(&self) -> &[u8];
+    fn as_key_value(&self) -> (&[u8], &[u8]);
 }
 
 pub struct SoloManager<T> where T: DbConnection {

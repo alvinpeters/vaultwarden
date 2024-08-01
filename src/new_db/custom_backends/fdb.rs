@@ -9,7 +9,7 @@ use foundationdb::future::{FdbSlice, FdbValue};
 use foundationdb::options::{DatabaseOption, TransactionOption};
 use foundationdb::tuple::Subspace;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
-use crate::new_db::custom_backends::{DbConnection, KvKeyspace, KvTransaction, SoloManager};
+use crate::new_db::custom_backends::{DbConnection, KeyValue, KvKeyspace, KvTransaction, SoloManager};
 use crate::new_db::error::{DbConnError, TransactionError};
 
 #[allow(unsafe_code)]
@@ -202,5 +202,19 @@ impl KvKeyspace for Subspace {
 
     fn range(&self) -> (Self::Key, Self::Key) {
         self.range()
+    }
+}
+
+impl KeyValue for FdbValue {
+    fn as_key(&self) -> &[u8] {
+        self.key()
+    }
+
+    fn as_value(&self) -> &[u8] {
+        self.value()
+    }
+
+    fn as_key_value(&self) -> (&[u8], &[u8]) {
+        (self.key(), self.value())
     }
 }

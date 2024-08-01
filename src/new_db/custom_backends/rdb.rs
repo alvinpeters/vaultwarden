@@ -3,8 +3,10 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
 use deadpool::managed::Pool;
-use rocksdb::{BoundColumnFamily, ColumnFamily, DB, DBCommon, DBPinnableSlice, DBWithThreadMode, ErrorKind, MultiThreaded, OptimisticTransactionDB, Transaction};
-use crate::new_db::custom_backends::{DbConnection, KvKeyspace, KvTransaction, SoloManager};
+use rocksdb::{BoundColumnFamily, ColumnFamily, DB, DBCommon, DBPinnableSlice, DBWithThreadMode, Direction, ErrorKind, IteratorMode, MultiThreaded, OptimisticTransactionDB, Transaction};
+use tokio::task::block_in_place;
+
+use crate::new_db::custom_backends::{DbConnection, KeyValue, KvKeyspace, KvTransaction, SoloManager};
 use crate::new_db::error::{DbConnError, TransactionError};
 use crate::new_db::SCHEMA_VERSION;
 
@@ -57,7 +59,16 @@ impl DbConnection for RdbConnection {
                 keyspace: &self.keyspace
             };
             // No need to retry read errors
-            let result = f(&trx).await?;
+            let result = match f(&trx).await {
+                Ok(t) => t,
+                Err(trx_err) => {
+                    if let Err(rdb_err) = trx.revert().await {
+                        // Can't even rollback, need to do a different error
+                        return Err(rdb_err.into());
+                    };
+                    return Err(trx_err);
+                }
+            };
 
             let Err(e) = trx.commit().await else {
                 // Successful, leave
@@ -78,8 +89,14 @@ impl DbConnection for RdbConnection {
 }
 
 impl<'db> RdbTransaction<'db> {
+    async fn revert(self) -> Result<(), rocksdb::Error> {
+        // Not Sync
+        block_in_place(|| self.transaction.rollback())
+    }
+
     async fn commit(self) -> Result<(), rocksdb::Error> {
-        self.transaction.commit()
+        // Not 'static nor Sync
+        block_in_place(|| self.transaction.commit())
     }
 }
 
@@ -87,7 +104,7 @@ impl<'db> KvTransaction<'db> for RdbTransaction<'db> {
     type Keyspace = RdbKeyspace;
     type ClosureError = TransactionError;
     type KeyRef = [u8];
-    type KeyValue = (DBPinnableSlice<'db>, DBPinnableSlice<'db>);
+    type KeyValue = RdbValue;
     type Key = Vec<u8>;
     type ValueRef = [u8];
     type Value = DBPinnableSlice<'db>;
@@ -96,22 +113,59 @@ impl<'db> KvTransaction<'db> for RdbTransaction<'db> {
     where
         K: AsRef<Self::KeyRef>
     {
-        // Transaction can't be Send
-        tokio::task::block_in_place(|| self.transaction.get_pinned(key)).map_err(|e| e.into())
+        // Transaction can't be Sync
+        block_in_place(|| self.transaction.get_pinned(key)).map_err(|e| e.into())
     }
 
     async fn get_range<K>(&self, from_key: K, to_key: K) -> Result<Vec<Self::KeyValue>, Self::ClosureError>
     where
         K: AsRef<Self::KeyRef>
     {
-        todo!()
+        let (mode, target, forward) = if from_key.as_ref() < to_key.as_ref() {
+            //
+            let mode = IteratorMode::From(from_key.as_ref(), Direction::Forward);
+            let target = to_key.as_ref();
+            let forward = true;
+            (mode, target, forward)
+        } else {
+            let mode = IteratorMode::From(to_key.as_ref(), Direction::Reverse);
+            let target = from_key.as_ref();
+            let forward = false;
+            (mode, target, forward)
+        };
+        let range_iterator = block_in_place(|| self.transaction.iterator(mode));
+        let mut vec = vec![];
+        for kv_result in range_iterator {
+            let (key, value) = kv_result?;
+            // Need to redo to make it cheaper/cleaner later
+            // Never use equal comparator here lest we lose the last value
+            if forward {
+                if key.as_ref() > target {
+                    break;
+                }
+            } else {
+                if key.as_ref() < target {
+                    break;
+                }
+            }
+            vec.push((key, value).into());
+        }
+
+        Ok(vec)
     }
 
     async fn get_space<K>(&self, keyspace: &Self::Keyspace) -> Result<Vec<Self::KeyValue>, Self::ClosureError>
     where
         K: AsRef<Self::KeyRef>
     {
-        todo!()
+        let prefix_iterator = block_in_place(|| self.transaction.prefix_iterator(keyspace.as_bytes()));
+        let mut vec = vec![];
+        for kv_result in prefix_iterator {
+            let key_value = kv_result?.into();
+            vec.push(key_value);
+        }
+
+        Ok(vec)
     }
 
     fn set<K, V>(&self, key: K, value: V) -> Result<(), Self::ClosureError>
@@ -119,15 +173,16 @@ impl<'db> KvTransaction<'db> for RdbTransaction<'db> {
         K: AsRef<Self::KeyRef>,
         V: AsRef<Self::ValueRef>
     {
-        //self.transaction.put_cf()
-        todo!()
+        // Since it's not getting written, no point blocking in place.
+        self.transaction.put(key, value).map_err(|e| e.into())
     }
 
     fn clear<K>(&self, key: K) -> Result<(), Self::ClosureError>
     where
         K: AsRef<Self::KeyRef>
     {
-        todo!()
+        // Since it's not getting written, no point blocking in place.
+        self.transaction.delete(key).map_err(|e| e.into())
     }
 
     fn clear_space(&self, keyspace: &Self::Keyspace) -> Result<(), Self::ClosureError> {
@@ -186,5 +241,34 @@ impl KvKeyspace for RdbKeyspace {
 
     fn range(&self) -> (Self::Key, Self::Key) {
         ([self.bytes.as_slice(), &[0x00]].concat(), [self.bytes.as_slice(), &[0xFF]].concat())
+    }
+}
+
+pub struct RdbValue {
+    key_box: Box<[u8]>,
+    value_box: Box<[u8]>
+}
+
+impl From<(Box<[u8]>, Box<[u8]>)> for RdbValue {
+    fn from(value: (Box<[u8]>, Box<[u8]>)) -> Self {
+        let (key_box, value_box) = value;
+        Self {
+            key_box,
+            value_box
+        }
+    }
+}
+
+impl KeyValue for RdbValue {
+    fn as_key(&self) -> &[u8] {
+        self.key_box.as_ref()
+    }
+
+    fn as_value(&self) -> &[u8] {
+        self.value_box.as_ref()
+    }
+
+    fn as_key_value(&self) -> (&[u8], &[u8]) {
+        (self.as_key(), self.as_value())
     }
 }
