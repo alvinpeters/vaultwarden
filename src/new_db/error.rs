@@ -1,7 +1,8 @@
 use std::fmt::{Display, Formatter};
 #[cfg(fdb)]
-use foundationdb::FdbBindingError;
-use foundationdb::FdbError;
+use foundationdb::{FdbBindingError, FdbError};
+#[cfg(rdb)]
+use rocksdb::Error as RdbError;
 use thiserror::Error;
 use crate::new_db::DbConnType;
 
@@ -17,7 +18,10 @@ pub enum DbConnError {
     StopError(String),
     #[cfg(fdb)]
     #[error("other FoundationDB error: {0}")]
-    FdbError(#[from] FdbError)
+    FdbError(#[from] FdbError),
+    #[cfg(rdb)]
+    #[error("other RocksDB error: {0}")]
+    RdbError(#[from] RdbError)
 }
 
 #[derive(Error, Debug)]
@@ -25,8 +29,11 @@ pub enum TransactionError {
     #[error("failed to serialize: {0}")]
     SerializationError(String),
     #[cfg(fdb)]
-    #[error("FoundationDB transaction failed: {0}")]
+    #[error("FoundationDB failed: {0}")]
     FdbTrxFailed(#[from] FdbBindingError),
+    #[cfg(rdb)]
+    #[error("RocksDB failed: {0}")]
+    RdbTrxFailed(#[from] RdbError)
 }
 
 #[derive(Error, Debug)]

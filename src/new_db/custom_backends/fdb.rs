@@ -36,7 +36,7 @@ pub struct FdbConfig {
 
 impl DbConnection for FdbConnection {
     type Config = FdbConfig;
-    type Transaction = FdbTransaction;
+    type Transaction<'db> = FdbTransaction;
 
     /// Starts the FoundationDB network runner thread. WIll not fail if already running, but will
     /// fail when already stopped.
@@ -81,11 +81,10 @@ impl DbConnection for FdbConnection {
     }
 
 
-    async fn transact<F, Fut, TrxErr, T>(&self, f: F) -> Result<T, TransactionError>
+    async fn transact<'db, F, Fut, T>(&'db self, f: F) -> Result<T, TransactionError>
     where
-        F: Fn(Self::Transaction) -> Fut,
-        Fut: Future<Output=Result<T, TrxErr>>,
-        TrxErr: Into<<Self::Transaction as KvTransaction>::ClosureError>
+        F: Fn(&Self::Transaction<'db>) -> Fut,
+        Fut: Future<Output=Result<T, <Self::Transaction<'db> as KvTransaction<'db>>::ClosureError>>
     {
 
         let res = self.database.run(|rt_trx, maybe_committed| {
@@ -93,7 +92,7 @@ impl DbConnection for FdbConnection {
                 trx: rt_trx,
                 subspace: self.subspace.to_owned(),
             };
-            f(trx).map_err(|e| e.into())
+            f(&trx).map_err(|e| e.into())
         }).await?;
         Ok(res)
     }
@@ -119,7 +118,7 @@ impl FdbTransaction {
     }
 }
 
-impl KvTransaction for FdbTransaction {
+impl<'db> KvTransaction<'db> for FdbTransaction {
     type Keyspace = Subspace;
     type ClosureError = FdbBindingError;
     type KeyRef = [u8];
@@ -128,7 +127,7 @@ impl KvTransaction for FdbTransaction {
     type ValueRef = [u8];
     type Value = FdbSlice;
 
-    async fn get<K>(&self, key: K) -> Result<Option<Self::Value>, Self::ClosureError>
+    async fn get<K>(&'db self, key: K) -> Result<Option<Self::Value>, Self::ClosureError>
     where
         K: AsRef<Self::KeyRef>
     {
@@ -175,6 +174,10 @@ impl KvKeyspace for Subspace {
     type KeyRef = [u8];
     type Key = Vec<u8>;
 
+    fn all() -> Self {
+        Subspace::all()
+    }
+
     fn from_bytes<B: Into<Self::Key>>(bytes: B) -> Self {
         Subspace::from_bytes(bytes)
     }
@@ -183,15 +186,15 @@ impl KvKeyspace for Subspace {
         self.bytes()
     }
 
-    fn keyspace<B: AsRef<Self::KeyRef>>(&self, bytes: &B) -> Self {
+    fn keyspace<B: AsRef<Self::KeyRef> + ?Sized>(&self, bytes: &B) -> Self {
         self.subspace(&bytes.as_ref())
     }
 
-    fn pack<B: AsRef<Self::KeyRef>>(&self, bytes: &B) -> Self::Key {
+    fn pack<B: AsRef<Self::KeyRef> + ?Sized>(&self, bytes: &B) -> Self::Key {
         self.pack(&bytes.as_ref())
     }
 
-    fn unpack<B: AsRef<Self::KeyRef>>(&self, key: &B) -> Option<Self::Key> {
+    fn unpack<B: AsRef<Self::KeyRef> + ?Sized>(&self, key: &B) -> Option<Self::Key> {
         self.unpack(&key.as_ref()).ok()
     }
 

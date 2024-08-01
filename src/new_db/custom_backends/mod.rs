@@ -11,7 +11,7 @@ pub mod rdb;
 
 pub trait DbConnection: Sized + Send + Sync {
     type Config;
-    type Transaction: KvTransaction;
+    type Transaction<'db>: KvTransaction<'db>;
 
     /// Perform any boot-up actions. Usually not needed and will do nothing.
     fn start() -> Result<(), DbConnError> { Ok(()) }
@@ -20,15 +20,14 @@ pub trait DbConnection: Sized + Send + Sync {
 
     fn establish(config: &Self::Config) -> Result<Self, DbConnError>;
 
-    async fn transact<F, Fut, TrxErr, T>(&self, f: F) -> Result<T, TransactionError>
+    async fn transact<'db, F, Fut, T>(&'db self, f: F) -> Result<T, TransactionError>
     where
-        F: Fn(Self::Transaction) -> Fut,
-        Fut: Future<Output = Result<T, TrxErr>>,
-        TrxErr: Into<<Self::Transaction as KvTransaction>::ClosureError>;
+        F: Fn(&Self::Transaction<'db>) -> Fut,
+        Fut: Future<Output = Result<T, <Self::Transaction<'db> as KvTransaction<'db>>::ClosureError>>;
 }
 
 /// Trait for key-value stores
-pub trait KvTransaction {
+pub trait KvTransaction<'db> {
     type Keyspace: KvKeyspace;
     type ClosureError;
     type KeyRef: ?Sized + Send;
@@ -37,7 +36,7 @@ pub trait KvTransaction {
     type ValueRef: ?Sized + Send;
     type Value: AsRef<Self::ValueRef>;
 
-    async fn get<K>(&self, key: K) -> Result<Option<Self::Value>, Self::ClosureError>
+    async fn get<K>(&'db self, key: K) -> Result<Option<Self::Value>, Self::ClosureError>
     where
         K: AsRef<Self::KeyRef>;
 
@@ -67,17 +66,19 @@ pub trait KvKeyspace: From<Vec<u8>> + Sized {
     type KeyRef: ?Sized + Send;
     type Key: AsRef<Self::KeyRef>;
 
+    fn all() -> Self;
+
     fn from_bytes<B: Into<Self::Key>>(bytes: B) -> Self;
 
     fn as_bytes(&self) -> &[u8];
 
-    fn keyspace<B: AsRef<Self::KeyRef>>(&self, bytes: &B) -> Self;
+    fn keyspace<B: AsRef<Self::KeyRef> + ?Sized>(&self, bytes: &B) -> Self;
 
     /// Appends bytes to the prefix slice.
-    fn pack<B: AsRef<Self::KeyRef>>(&self, bytes: &B) -> Self::Key;
+    fn pack<B: AsRef<Self::KeyRef> + ?Sized>(&self, bytes: &B) -> Self::Key;
 
     /// Just strips prefix. Returns none if prefix doesn't match.
-    fn unpack<B: AsRef<Self::KeyRef>>(&self, key: &B) -> Option<Self::Key>;
+    fn unpack<B: AsRef<Self::KeyRef> + ?Sized>(&self, key: &B) -> Option<Self::Key>;
 
     fn range(&self) -> (Self::Key, Self::Key);
 }

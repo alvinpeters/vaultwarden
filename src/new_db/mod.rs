@@ -10,6 +10,8 @@ use crate::new_db::custom_backends::{DbConnection, SoloManager};
 use crate::new_db::custom_backends::fdb::FdbConnection;
 use crate::new_db::error::DbConnError;
 
+const SCHEMA_VERSION: &[u8] = b"v2";
+
 mod models;
 mod schema_helper;
 mod error;
