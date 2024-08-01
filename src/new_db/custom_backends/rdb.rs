@@ -2,11 +2,13 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use deadpool::managed::Pool;
 use rocksdb::{BoundColumnFamily, ColumnFamily, DB, DBCommon, DBPinnableSlice, DBWithThreadMode, Direction, ErrorKind, IteratorMode, MultiThreaded, OptimisticTransactionDB, Transaction};
 use tokio::task::block_in_place;
-
-use crate::new_db::custom_backends::{DbConnection, KeyValue, KvKeyspace, KvTransaction, SoloManager};
+use crate::config::Config;
+use crate::new_db::custom_backends::{DbConfig, DbConnection, KeyValue, KvKeyspace, KvTransaction, SoloManager};
+use crate::new_db::custom_backends::fdb::FdbConfig;
 use crate::new_db::error::{DbConnError, TransactionError};
 use crate::new_db::SCHEMA_VERSION;
 
@@ -22,13 +24,23 @@ pub struct RdbConfig {
     retry_attempts: usize,
 }
 
+impl DbConfig for RdbConfig {
+    fn configure(config: &Config) -> Self {
+        Self {
+            db_path: config.database_url(),
+            keyspace: config.db_main_keyspace(),
+            retry_attempts: config.db_transaction_retries() as usize,
+        }
+    }
+}
+
 pub struct RdbTransaction<'db> {
     transaction: Transaction<'db, OptimisticTransactionDB<MultiThreaded>>,
     keyspace: &'db RdbKeyspace,
 }
 
 impl DbConnection for RdbConnection {
-    type ConnectionPool = Pool<SoloManager<Self>>;
+    type PoolManager = SoloManager<Self>;
     type Config = RdbConfig;
     type Transaction<'db> = RdbTransaction<'db>;
 

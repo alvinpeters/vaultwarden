@@ -6,41 +6,53 @@ use crate::http_client::CustomHttpClientError;
 use std::error::Error as StdError;
 
 macro_rules! make_error {
-    ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
+    ( $( $(#[$attr:meta])* $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
         const BAD_REQUEST: u16 = 400;
 
-        pub enum ErrorKind { $($name( $ty )),+ }
+        pub enum ErrorKind { $( $(#[$attr])*  $name( $ty )),+ }
 
         #[derive(Debug)]
         pub struct ErrorEvent { pub event: EventType }
         pub struct Error { message: String, error: ErrorKind, error_code: u16, event: Option<ErrorEvent> }
 
-        $(impl From<$ty> for Error {
+        $( $(#[$attr])* impl From<$ty> for Error {
             fn from(err: $ty) -> Self { Error::from((stringify!($name), err)) }
         })+
-        $(impl<S: Into<String>> From<(S, $ty)> for Error {
+        $( $(#[$attr])* impl<S: Into<String>> From<(S, $ty)> for Error {
             fn from(val: (S, $ty)) -> Self {
                 Error { message: val.0.into(), error: ErrorKind::$name(val.1), error_code: BAD_REQUEST, event: None }
             }
         })+
         impl StdError for Error {
             fn source(&self) -> Option<&(dyn StdError + 'static)> {
-                match &self.error {$( ErrorKind::$name(e) => $src_fn(e), )+}
+                match &self.error {$( $(#[$attr])* ErrorKind::$name(e) => $src_fn(e), )+}
             }
         }
         impl std::fmt::Display for Error {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match &self.error {$(
-                   ErrorKind::$name(e) => f.write_str(&$usr_msg_fun(e, &self.message)),
+                    $(#[$attr])*
+                    ErrorKind::$name(e) => f.write_str(&$usr_msg_fun(e, &self.message)),
                 )+}
             }
         }
     };
 }
 
+#[cfg(feature = "new_db")]
+use crate::new_db::error::DbConnError;
+#[cfg(feature = "new_db")]
+use crate::new_db::error::TransactionError;
+#[cfg(feature = "new_db")]
+use deadpool::managed::PoolError;
+
+#[cfg(feature = "legacy_db")]
 use diesel::r2d2::PoolError as R2d2Err;
+#[cfg(feature = "legacy_db")]
 use diesel::result::Error as DieselErr;
+#[cfg(feature = "legacy_db")]
 use diesel::ConnectionError as DieselConErr;
+
 use handlebars::RenderError as HbErr;
 use jsonwebtoken::errors::Error as JwtErr;
 use lettre::address::AddressError as AddrErr;
@@ -75,8 +87,21 @@ make_error! {
 
     // Used for special return values, like 2FA errors
     Json(Value):     _no_source,  _serialize,
+
+    #[cfg(feature = "new_db")]
+    NewDbConn(DbConnError):   _has_source, _api_error,
+    #[cfg(feature = "new_db")]
+    NewTrx(TransactionError):   _has_source, _api_error,
+    #[cfg(feature = "new_db")]
+    NewPool(PoolError<DbConnError>):   _has_source, _api_error,
+
+    #[cfg(feature = "legacy_db")]
     Db(DieselErr):   _has_source, _api_error,
+    #[cfg(feature = "legacy_db")]
     R2d2(R2d2Err):   _has_source, _api_error,
+    #[cfg(feature = "legacy_db")]
+    DieselCon(DieselConErr): _has_source, _api_error,
+
     Serde(SerdeErr): _has_source, _api_error,
     JWt(JwtErr):     _has_source, _api_error,
     Handlebars(HbErr): _has_source, _api_error,
@@ -93,7 +118,6 @@ make_error! {
     OpenSSL(SSLErr):   _has_source, _api_error,
     Rocket(RocketErr): _has_source, _api_error,
 
-    DieselCon(DieselConErr): _has_source, _api_error,
     Webauthn(WebauthnErr):   _has_source, _api_error,
 }
 

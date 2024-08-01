@@ -584,7 +584,19 @@ make_config! {
 
         /// Enable DB WAL |> Turning this off might lead to worse performance, but might help if using vaultwarden on some exotic filesystems,
         /// that do not support WAL. Please make sure you read project wiki on the topic before changing this setting.
+        /// Not used by FoundationDB.
         enable_db_wal:          bool,   false,  def,    true;
+
+        /// Prefixed to all keys in key-value stores. Ignored by non key-value store backends.
+        db_main_keyspace:          String, false,  def,    "vw".to_string();
+
+        /// Max amount of times a transaction will be repeated before returning an error instead.
+        /// Only used by FoundationDB and RocksDB.
+        db_transaction_retries: u16,    false,  def,    5;
+
+        /// Max seconds of attempts before the database transaction gives up and returns an error.
+        /// Only used by FoundationDB and RocksDB.
+        db_transaction_timeout: u64,    false,  def,    5;
 
         /// Max database connection retries |> Number of times to retry the database connection during startup, with 1 second between each retry, set to 0 to retry indefinitely
         db_connection_retries:  u32,    false,  def,    15;

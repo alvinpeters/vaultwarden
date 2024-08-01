@@ -9,8 +9,10 @@ use foundationdb::future::{FdbSlice, FdbValue};
 use foundationdb::options::{DatabaseOption, TransactionOption};
 use foundationdb::tuple::Subspace;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
-use crate::new_db::custom_backends::{DbConnection, KeyValue, KvKeyspace, KvTransaction, SoloManager};
+use crate::config::Config;
+use crate::new_db::custom_backends::{DbConfig, DbConnection, KeyValue, KvKeyspace, KvTransaction, SoloManager};
 use crate::new_db::error::{DbConnError, TransactionError};
+use crate::new_db::SCHEMA_VERSION;
 
 #[allow(unsafe_code)]
 static FDB_NETWORK_RUNNER: LazyLock<Mutex<Option<NetworkAutoStop>>> = LazyLock::new(|| {
@@ -35,8 +37,19 @@ pub struct FdbConfig {
     trx_timeout: Duration,
 }
 
+impl DbConfig for FdbConfig {
+    fn configure(config: &Config) -> Self {
+        Self {
+            cluster_path: config.database_url(),
+            base_subspace: config.db_main_keyspace(),
+            max_repeat: config.db_transaction_retries() as i32,
+            trx_timeout: Duration::from_secs(config.db_transaction_timeout())
+        }
+    }
+}
+
 impl DbConnection for FdbConnection {
-    type ConnectionPool = Pool<SoloManager<Self>>;
+    type PoolManager = SoloManager<Self>;
     type Config = FdbConfig;
     type Transaction<'db> = FdbTransaction;
 
@@ -73,7 +86,7 @@ impl DbConnection for FdbConnection {
         let database = Database::from_path(cluster_path_str)?;
         database.set_option(DatabaseOption::TransactionRetryLimit(config.max_repeat))?;
         database.set_option(DatabaseOption::TransactionTimeout(config.trx_timeout.as_millis() as i32))?;
-        let subspace = Subspace::from_bytes(config.base_subspace.as_bytes());
+        let subspace = Subspace::from_bytes(config.base_subspace.as_bytes()).subspace(&SCHEMA_VERSION);
 
         let conn = Self {
             database,

@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::sync::Arc;
 use deadpool::managed::{Manager, Metrics, RecycleResult};
+use crate::config::Config;
 use crate::new_db::custom_backends::fdb::FdbTransaction;
 use crate::new_db::error::{DbConnError, TransactionError};
 
@@ -9,9 +10,13 @@ pub mod fdb;
 #[cfg(rdb)]
 pub mod rdb;
 
+pub trait DbConfig: Sized {
+    fn configure(config: &Config) -> Self;
+}
+
 pub trait DbConnection: Sized + Send + Sync {
-    type ConnectionPool;
-    type Config;
+    type PoolManager;
+    type Config: DbConfig;
     type Transaction<'db>: KvTransaction<'db>;
 
     /// Perform any boot-up actions. Usually not needed and will do nothing.
@@ -95,8 +100,10 @@ pub struct SoloManager<T> where T: DbConnection {
 }
 
 impl<T> SoloManager<T> where T: DbConnection {
-    pub fn with_config(db_config: T::Config) -> Result<Self, DbConnError> {
+    pub fn with_config(config: &Config) -> Result<Self, DbConnError> {
         T::start()?;
+
+        let db_config = T::Config::configure(&config);
 
         let manager = Self {
             conn_arc: Arc::new(T::establish(&db_config)?)

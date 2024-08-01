@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use deadpool::managed::{BuildError, PoolError};
 #[cfg(fdb)]
 use foundationdb::{FdbBindingError, FdbError};
 #[cfg(rdb)]
@@ -8,8 +9,10 @@ use crate::new_db::DbConnType;
 
 #[derive(Error, Debug)]
 pub enum DbConnError {
-    #[error("c")]
+    #[error("{0} database backend feature is not enabled for this URL: {1}")]
     DbDisabled(DbConnType, String),
+    #[error("pool build error: {0}")]
+    PoolBuildError(#[from] BuildError),
     #[error("couldn't establish connection with this string: {0}")]
     EstablishFail(String),
     #[error("failed to start: {0}")]
@@ -21,7 +24,25 @@ pub enum DbConnError {
     FdbError(#[from] FdbError),
     #[cfg(rdb)]
     #[error("other RocksDB error: {0}")]
-    RdbError(#[from] RdbError)
+    RdbError(#[from] RdbError),
+    #[cfg(feature = "new_db_diesel")]
+    #[error("unknown error: {0}")]
+    DieselPoolError(#[from] diesel_async::pooled_connection::PoolError),
+
+    #[error("other pool error: {0}")]
+    OtherPoolError(String),
+    #[error("unknown error: {0}")]
+    Unknown(String)
+}
+
+#[cfg(feature = "new_db_diesel")]
+impl From<PoolError<diesel_async::pooled_connection::PoolError>> for DbConnError {
+    fn from(value: PoolError<diesel_async::pooled_connection::PoolError>) -> Self {
+        match value {
+            PoolError::Backend(e) => e.into(),
+            _ => Self::OtherPoolError(value.to_string())
+        }
+    }
 }
 
 #[derive(Error, Debug)]

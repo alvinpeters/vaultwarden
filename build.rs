@@ -18,6 +18,12 @@ fn main() {
     println!("cargo:rustc-cfg=fdb");
     #[cfg(feature = "rdb")]
     println!("cargo:rustc-cfg=rdb");
+    #[cfg(feature = "new_db_sqlite")]
+    println!("cargo:rustc-cfg=sqlite");
+    #[cfg(feature = "new_db_mysql")]
+    println!("cargo:rustc-cfg=mysql");
+    #[cfg(feature = "new_db_pgsql")]
+    println!("cargo:rustc-cfg=pgsql");
 
     #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql")))]
     compile_error!(

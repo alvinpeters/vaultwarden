@@ -87,6 +87,9 @@ async fn main() -> Result<(), Error> {
     create_dir(&CONFIG.sends_folder(), "sends folder");
     create_dir(&CONFIG.attachments_folder(), "attachments folder");
 
+    #[cfg(feature = "new_db")]
+    let _new_pool = create_new_db_pool().await?;
+
     let pool = create_db_pool().await;
     schedule_jobs(pool.clone());
     crate::db::models::TwoFactor::migrate_u2f_to_webauthn(&mut pool.get().await.unwrap()).await.unwrap();
@@ -515,6 +518,7 @@ fn check_web_vault() {
     }
 }
 
+#[cfg(feature = "legacy_db")]
 async fn create_db_pool() -> db::DbPool {
     match util::retry_db(db::DbPool::from_config, CONFIG.db_connection_retries()).await {
         Ok(p) => p,
@@ -523,6 +527,13 @@ async fn create_db_pool() -> db::DbPool {
             exit(1);
         }
     }
+}
+
+#[cfg(feature = "new_db")]
+async fn create_new_db_pool() -> Result<new_db::DbPool, Error> {
+    // TODO: Implement retry later
+    let pool = new_db::DbPool::from_config(&CONFIG)?;
+    Ok(pool)
 }
 
 async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error> {
